@@ -2,12 +2,13 @@
 
 using System.Collections.Generic;
 using System.Collections.Immutable;
+using Microsoft.CodeAnalysis;
 using Microsoft.CodeAnalysis.FlowAnalysis;
 using Microsoft.CodeAnalysis.FlowAnalysis.DataFlow;
 
 namespace Analyzer.Utilities.FlowAnalysis.Analysis.PropertySetAnalysis
 {
-    using PropertySetAnalysisData = IDictionary<AbstractLocation, PropertySetAbstractValue>;
+    using PropertySetAnalysisData = DictionaryAnalysisData<AbstractLocation, PropertySetAbstractValue>;
 
     /// <summary>
     /// Result from execution of <see cref="PropertySetAnalysis"/> on a basic block.
@@ -15,14 +16,12 @@ namespace Analyzer.Utilities.FlowAnalysis.Analysis.PropertySetAnalysis
     /// </summary>
     internal class PropertySetBlockAnalysisResult : AbstractBlockAnalysisResult
     {
-        public PropertySetBlockAnalysisResult(BasicBlock basicBlock, DataFlowAnalysisInfo<PropertySetAnalysisData> blockAnalysisData)
+        public PropertySetBlockAnalysisResult(BasicBlock basicBlock, PropertySetAnalysisData blockAnalysisData)
             : base(basicBlock)
         {
-            InputData = blockAnalysisData.Input?.ToImmutableDictionary() ?? ImmutableDictionary<AbstractLocation, PropertySetAbstractValue>.Empty;
-            OutputData = blockAnalysisData.Output?.ToImmutableDictionary() ?? ImmutableDictionary<AbstractLocation, PropertySetAbstractValue>.Empty;
+            Data = blockAnalysisData?.ToImmutableDictionary() ?? ImmutableDictionary<AbstractLocation, PropertySetAbstractValue>.Empty;
         }
 
-        public ImmutableDictionary<AbstractLocation, PropertySetAbstractValue> InputData { get; }
-        public ImmutableDictionary<AbstractLocation, PropertySetAbstractValue> OutputData { get; }
+        public ImmutableDictionary<AbstractLocation, PropertySetAbstractValue> Data { get; }
     }
 }

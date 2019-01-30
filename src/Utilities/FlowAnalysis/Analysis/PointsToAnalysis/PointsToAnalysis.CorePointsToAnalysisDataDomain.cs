@@ -2,12 +2,13 @@
 
 using System;
 using System.Collections.Generic;
+using System.Collections.Immutable;
 using System.Diagnostics;
 using System.Linq;
 
 namespace Microsoft.CodeAnalysis.FlowAnalysis.DataFlow.PointsToAnalysis
 {
-    using CorePointsToAnalysisData = IDictionary<AnalysisEntity, PointsToAbstractValue>;
+    using CorePointsToAnalysisData = DictionaryAnalysisData<AnalysisEntity, PointsToAbstractValue>;
     using PointsToAnalysisResult = DataFlowAnalysisResult<PointsToBlockAnalysisResult, PointsToAbstractValue>;
 
     internal partial class PointsToAnalysis : ForwardDataFlowAnalysis<PointsToAnalysisData, PointsToAnalysisContext, PointsToAnalysisResult, PointsToBlockAnalysisResult, PointsToAbstractValue>
@@ -26,20 +27,37 @@ namespace Microsoft.CodeAnalysis.FlowAnalysis.DataFlow.PointsToAnalysis
             public DefaultPointsToValueGenerator DefaultPointsToValueGenerator { get; }
 
             protected override PointsToAbstractValue GetDefaultValue(AnalysisEntity analysisEntity) => DefaultPointsToValueGenerator.GetOrCreateDefaultValue(analysisEntity);
+
             protected override bool CanSkipNewEntry(AnalysisEntity analysisEntity, PointsToAbstractValue value)
                 => value.Kind == PointsToAbstractValueKind.Unknown ||
                     !DefaultPointsToValueGenerator.IsTrackedEntity(analysisEntity) ||
                     value == GetDefaultValue(analysisEntity);
 
-            public CorePointsToAnalysisData MergeAnalysisDataForBackEdge(CorePointsToAnalysisData forwardEdgeAnalysisData, CorePointsToAnalysisData backEdgeAnalysisData, Func<PointsToAbstractValue, IEnumerable<AnalysisEntity>> getChildAnalysisEntities)
+            protected override void AssertValidEntryForMergedMap(AnalysisEntity analysisEntity, PointsToAbstractValue value)
+            {
+                PointsToAnalysisData.AssertValidPointsToAnalysisKeyValuePair(analysisEntity, value);
+            }
+
+            protected override void AssertValidAnalysisData(CorePointsToAnalysisData map)
+            {
+                PointsToAnalysisData.AssertValidPointsToAnalysisData(map);
+            }
+
+            public CorePointsToAnalysisData MergeCoreAnalysisDataForBackEdge(
+                PointsToAnalysisData forwardEdgeAnalysisData,
+                PointsToAnalysisData backEdgeAnalysisData,
+                Func<PointsToAbstractValue, ImmutableHashSet<AnalysisEntity>> getChildAnalysisEntities,
+                Action<AnalysisEntity, PointsToAnalysisData> resetAbstractValue)
             {
                 Debug.Assert(forwardEdgeAnalysisData != null);
                 Debug.Assert(backEdgeAnalysisData != null);
+                Debug.Assert(forwardEdgeAnalysisData.CoreAnalysisData != null);
+                Debug.Assert(backEdgeAnalysisData.CoreAnalysisData != null);
 
                 // Stop tracking points to values present in both branches if their is an assignment to a may-be null value from the back edge.
                 // Clone the input forwardEdgeAnalysisData to ensure we don't overwrite the input dictionary.
-                forwardEdgeAnalysisData = new Dictionary<AnalysisEntity, PointsToAbstractValue>(forwardEdgeAnalysisData);
-                List<AnalysisEntity> keysInMap1 = forwardEdgeAnalysisData.Keys.ToList();
+                forwardEdgeAnalysisData = (PointsToAnalysisData)forwardEdgeAnalysisData.Clone();
+                List<AnalysisEntity> keysInMap1 = forwardEdgeAnalysisData.CoreAnalysisData.Keys.ToList();
                 foreach (var key in keysInMap1)
                 {
                     var forwardEdgeValue = forwardEdgeAnalysisData[key];
@@ -77,7 +95,7 @@ namespace Microsoft.CodeAnalysis.FlowAnalysis.DataFlow.PointsToAnalysis
                         void stopTrackingAnalysisDataForChildren()
                         {
                             var childEntities = getChildAnalysisEntities(forwardEdgeValue)
-                                .Union(getChildAnalysisEntities(backEdgeValue));
+                                .AddRange(getChildAnalysisEntities(backEdgeValue));
                             foreach (var childEntity in childEntities)
                             {
                                 stopTrackingAnalysisDataForEntity(childEntity);
@@ -86,17 +104,14 @@ namespace Microsoft.CodeAnalysis.FlowAnalysis.DataFlow.PointsToAnalysis
 
                         void stopTrackingAnalysisDataForEntity(AnalysisEntity entity)
                         {
-                            if (forwardEdgeAnalysisData.ContainsKey(entity))
-                            {
-                                forwardEdgeAnalysisData[entity] = PointsToAbstractValue.Unknown;
-                            }
+                            resetAbstractValue(entity, forwardEdgeAnalysisData);
                         }
                     }
                 }
 
-                var resultMap = Merge(forwardEdgeAnalysisData, backEdgeAnalysisData);
-                Debug.Assert(Compare(forwardEdgeAnalysisData, resultMap) <= 0);
-                Debug.Assert(Compare(backEdgeAnalysisData, resultMap) <= 0);
+                var resultMap = Merge(forwardEdgeAnalysisData.CoreAnalysisData, backEdgeAnalysisData.CoreAnalysisData);
+                Debug.Assert(Compare(forwardEdgeAnalysisData.CoreAnalysisData, resultMap) <= 0);
+                Debug.Assert(Compare(backEdgeAnalysisData.CoreAnalysisData, resultMap) <= 0);
                 return resultMap;
             }
         }

@@ -1,11 +1,10 @@
 ﻿// Copyright (c) Microsoft.  All Rights Reserved.  Licensed under the Apache License, Version 2.0.  See License.txt in the project root for license information.
 
 using System.Collections.Generic;
-using System.Diagnostics;
 
 namespace Microsoft.CodeAnalysis.FlowAnalysis.DataFlow.ParameterValidationAnalysis
 {
-    using ParameterValidationAnalysisData = IDictionary<AbstractLocation, ParameterValidationAbstractValue>;
+    using ParameterValidationAnalysisData = DictionaryAnalysisData<AbstractLocation, ParameterValidationAbstractValue>;
 
     internal partial class ParameterValidationAnalysis : ForwardDataFlowAnalysis<ParameterValidationAnalysisData, ParameterValidationAnalysisContext, ParameterValidationAnalysisResult, ParameterValidationBlockAnalysisResult, ParameterValidationAbstractValue>
     {
@@ -22,7 +21,7 @@ namespace Microsoft.CodeAnalysis.FlowAnalysis.DataFlow.ParameterValidationAnalys
 
             public override ParameterValidationAbstractValue UnknownOrMayBeValue => ParameterValidationAbstractValue.MayBeValidated;
 
-            public override int Compare(ParameterValidationAbstractValue oldValue, ParameterValidationAbstractValue newValue)
+            public override int Compare(ParameterValidationAbstractValue oldValue, ParameterValidationAbstractValue newValue, bool assertMonotonicity)
             {
                 return Comparer<ParameterValidationAbstractValue>.Default.Compare(oldValue, newValue);
             }

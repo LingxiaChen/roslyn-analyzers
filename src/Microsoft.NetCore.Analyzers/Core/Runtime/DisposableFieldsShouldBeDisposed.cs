@@ -85,7 +85,8 @@ namespace Microsoft.NetCore.Analyzers.Runtime
                     if (disposeAnalysisHelper.HasAnyDisposableCreationDescendant(operationBlockStartContext.OperationBlocks, containingMethod))
                     {
                         if (disposeAnalysisHelper.TryGetOrComputeResult(operationBlockStartContext.OperationBlocks,
-                            containingMethod, out var disposeAnalysisResult, out var pointsToAnalysisResult))
+                            containingMethod, operationBlockStartContext.Options, Rule, operationBlockStartContext.CancellationToken,
+                            out var disposeAnalysisResult, out var pointsToAnalysisResult))
                         {
                             Debug.Assert(disposeAnalysisResult != null);
                             Debug.Assert(pointsToAnalysisResult != null);
@@ -129,12 +130,13 @@ namespace Microsoft.NetCore.Analyzers.Runtime
                     }
 
                     // Mark fields disposed in Dispose method(s).
-                    if (containingMethod.GetDisposeMethodKind(disposeAnalysisHelper.IDisposable) != DisposeMethodKind.None)
+                    if (containingMethod.GetDisposeMethodKind(disposeAnalysisHelper.IDisposable, disposeAnalysisHelper.Task) != DisposeMethodKind.None)
                     {
                         var disposableFields = disposeAnalysisHelper.GetDisposableFields(containingMethod.ContainingType);
                         if (!disposableFields.IsEmpty)
                         {
-                            if (disposeAnalysisHelper.TryGetOrComputeResult(operationBlockStartContext.OperationBlocks, containingMethod, trackInstanceFields: true,
+                            if (disposeAnalysisHelper.TryGetOrComputeResult(operationBlockStartContext.OperationBlocks, containingMethod,
+                                operationBlockStartContext.Options, Rule, trackInstanceFields: true, cancellationToken: operationBlockStartContext.CancellationToken,
                                 disposeAnalysisResult: out var disposeAnalysisResult, pointsToAnalysisResult: out var pointsToAnalysisResult))
                             {
                                 BasicBlock exitBlock = disposeAnalysisResult.ControlFlowGraph.GetExit();
@@ -144,7 +146,7 @@ namespace Microsoft.NetCore.Analyzers.Runtime
                                     PointsToAbstractValue pointsToValue = fieldWithPointsToValue.Value;
 
                                     Debug.Assert(field.Type.IsDisposable(disposeAnalysisHelper.IDisposable));
-                                    ImmutableDictionary<AbstractLocation, DisposeAbstractValue> disposeDataAtExit = disposeAnalysisResult[exitBlock].OutputData;
+                                    ImmutableDictionary<AbstractLocation, DisposeAbstractValue> disposeDataAtExit = disposeAnalysisResult.ExitBlockOutput.Data;
                                     var disposed = false;
                                     foreach (var location in pointsToValue.Locations)
                                     {

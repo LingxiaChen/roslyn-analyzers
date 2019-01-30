@@ -3,6 +3,8 @@
 using System.Collections.Immutable;
 using System.Diagnostics;
 
+#pragma warning disable CA1067 // Override Object.Equals(object) when implementing IEquatable<T> - CacheBasedEquatable handles equality
+
 namespace Microsoft.CodeAnalysis.FlowAnalysis.DataFlow
 {
     internal abstract partial class AbstractIndex
@@ -18,7 +20,7 @@ namespace Microsoft.CodeAnalysis.FlowAnalysis.DataFlow
             public IOperation Operation { get; }
 
 #pragma warning disable CA1307 // Specify StringComparison - string.GetHashCode(StringComparison) not available in all projects that reference this shared project
-            protected override void ComputeHashCodeParts(ImmutableArray<int>.Builder builder)
+            protected override void ComputeHashCodeParts(ArrayBuilder<int> builder)
             {
                 builder.Add(Operation.GetHashCode());
                 builder.Add(nameof(OperationBasedIndex).GetHashCode());

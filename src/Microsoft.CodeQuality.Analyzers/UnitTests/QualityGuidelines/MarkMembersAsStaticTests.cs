@@ -562,6 +562,113 @@ End Class
 ", vbTestApiDefinitions });
         }
 
+        [Fact, WorkItem(1865, "https://github.com/dotnet/roslyn-analyzers/issues/1865")]
+        public void CSharp_InstanceReferenceInObjectInitializer_Diagnostic()
+        {
+            VerifyCSharp(@"
+public class A
+{
+    public void M()
+    {
+        var x = new B() { P = true };
+    }
+}
+
+public class B
+{
+    public bool P { get; set; }
+}",
+            // Test0.cs(4,17): warning CA1822: Member M does not access instance data and can be marked as static (Shared in VisualBasic)
+            GetCSharpResultAt(4, 17, "M"));
+        }
+
+        [Fact, WorkItem(1865, "https://github.com/dotnet/roslyn-analyzers/issues/1865")]
+        public void Basic_InstanceReferenceInObjectInitializer_Diagnostic()
+        {
+            VerifyBasic(@"
+Public Class A
+    Public Sub M()
+        Dim x = New B With {.P = True}
+    End Sub
+End Class
+
+Public Class B
+    Public Property P As Boolean
+End Class
+",
+            // Test0.vb(3,16): warning CA1822: Member M does not access instance data and can be marked as static (Shared in VisualBasic)
+            GetBasicResultAt(3, 16, "M"));
+        }
+
+        [Fact, WorkItem(1933, "https://github.com/dotnet/roslyn-analyzers/issues/1933")]
+        public void CSharpPropertySingleAccessorAccessingInstance_NoDiagnostic()
+        {
+            VerifyCSharp(@"
+public class MyClass
+{
+    private static bool StaticThing;
+    private bool InstanceThing;
+
+    public bool Thing1
+    {
+        get { return StaticThing; }
+        set
+        {
+            StaticThing = value;
+            InstanceThing = value;
+        }
+    }
+
+    public bool Thing2
+    {
+        get { return InstanceThing && StaticThing; }
+        set
+        {
+            StaticThing = value;
+        }
+    }
+}");
+        }
+
+        [Fact, WorkItem(1933, "https://github.com/dotnet/roslyn-analyzers/issues/1933")]
+        public void CSharpEventWithSingleAccessorAccessingInstance_NoDiagnostic()
+        {
+            VerifyCSharp(@"
+using System;
+
+public class MyClass
+{
+    private static bool StaticThing;
+    private bool InstanceThing;
+
+    event EventHandler MyEvent1
+    {
+        add
+        {
+            StaticThing = true;
+            InstanceThing = true;
+        }
+        remove
+        {
+            StaticThing = true;
+        }
+    }
+
+    event EventHandler MyEvent2
+    {
+        add
+        {
+            StaticThing = true;
+        }
+        remove
+        {
+            StaticThing = true;
+            InstanceThing = true;
+        }
+    }
+}");
+        }
+
         private DiagnosticResult GetCSharpResultAt(int line, int column, string symbolName)
         {
             return GetCSharpResultAt(line, column, MarkMembersAsStaticAnalyzer.Rule, symbolName);

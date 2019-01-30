@@ -1,9 +1,12 @@
 ﻿// Copyright (c) Microsoft.  All Rights Reserved.  Licensed under the Apache License, Version 2.0.  See License.txt in the project root for license information.
 
+using System.Collections.Generic;
 using System.Collections.Immutable;
 using System.Diagnostics;
 using System.Linq;
 using Analyzer.Utilities;
+
+#pragma warning disable CA1067 // Override Object.Equals(object) when implementing IEquatable<T> - CacheBasedEquatable handles equality
 
 namespace Microsoft.CodeAnalysis.FlowAnalysis.DataFlow.CopyAnalysis
 {
@@ -50,7 +53,7 @@ namespace Microsoft.CodeAnalysis.FlowAnalysis.DataFlow.CopyAnalysis
             return new CopyAbstractValue(AnalysisEntities.Remove(entityToRemove));
         }
 
-        public CopyAbstractValue WithEntitiesRemoved(ImmutableHashSet<AnalysisEntity> entitiesToRemove)
+        public CopyAbstractValue WithEntitiesRemoved(IEnumerable<AnalysisEntity> entitiesToRemove)
         {
             Debug.Assert(entitiesToRemove.All(entityToRemove => AnalysisEntities.Contains(entityToRemove)));
             Debug.Assert(AnalysisEntities.Count > 1);
@@ -62,7 +65,7 @@ namespace Microsoft.CodeAnalysis.FlowAnalysis.DataFlow.CopyAnalysis
         public ImmutableHashSet<AnalysisEntity> AnalysisEntities { get; }
         public CopyAbstractValueKind Kind { get; }
 
-        protected override void ComputeHashCodeParts(ImmutableArray<int>.Builder builder)
+        protected override void ComputeHashCodeParts(ArrayBuilder<int> builder)
         {
             builder.Add(HashUtilities.Combine(AnalysisEntities));
             builder.Add(Kind.GetHashCode());

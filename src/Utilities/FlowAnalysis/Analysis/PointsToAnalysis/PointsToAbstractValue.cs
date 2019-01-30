@@ -5,6 +5,8 @@ using System.Collections.Immutable;
 using System.Diagnostics;
 using System.Linq;
 
+#pragma warning disable CA1067 // Override Object.Equals(object) when implementing IEquatable<T> - CacheBasedEquatable handles equality
+
 namespace Microsoft.CodeAnalysis.FlowAnalysis.DataFlow.PointsToAnalysis
 {
     /// <summary>
@@ -27,6 +29,7 @@ namespace Microsoft.CodeAnalysis.FlowAnalysis.DataFlow.PointsToAnalysis
             Debug.Assert(locations.All(location => !location.IsNull) || nullState != NullAbstractValue.NotNull);
             Debug.Assert(nullState != NullAbstractValue.Undefined);
             Debug.Assert(nullState != NullAbstractValue.Invalid);
+            Debug.Assert(!locations.Any(l => l.IsAnalysisEntityDefaultLocation && l.AnalysisEntityOpt.HasUnknownInstanceLocation));
 
             Locations = locations;
             LValueCapturedOperations = ImmutableHashSet<IOperation>.Empty;
@@ -163,7 +166,7 @@ namespace Microsoft.CodeAnalysis.FlowAnalysis.DataFlow.PointsToAnalysis
         public PointsToAbstractValueKind Kind { get; }
         public NullAbstractValue NullState { get; }
 
-        protected override void ComputeHashCodeParts(ImmutableArray<int>.Builder builder)
+        protected override void ComputeHashCodeParts(ArrayBuilder<int> builder)
         {
             builder.Add(HashUtilities.Combine(Locations));
             builder.Add(HashUtilities.Combine(LValueCapturedOperations));

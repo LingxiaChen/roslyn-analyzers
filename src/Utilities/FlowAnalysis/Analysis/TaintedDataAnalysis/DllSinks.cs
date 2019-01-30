@@ -2,6 +2,7 @@
 
 using System.Collections.Immutable;
 using Analyzer.Utilities.Extensions;
+using Microsoft.CodeAnalysis;
 
 namespace Analyzer.Utilities.FlowAnalysis.Analysis.TaintedDataAnalysis
 {
@@ -14,9 +15,9 @@ namespace Analyzer.Utilities.FlowAnalysis.Analysis.TaintedDataAnalysis
 
         static DllSinks()
         {
-            ImmutableHashSet<SinkInfo>.Builder sinkInfosBuilder = ImmutableHashSet.CreateBuilder<SinkInfo>();
+            var sinkInfosBuilder = PooledHashSet<SinkInfo>.GetInstance();
 
-            sinkInfosBuilder.AddSink(
+            sinkInfosBuilder.AddSinkInfo(
                 WellKnownTypes.SystemReflectionAssembly,
                 SinkKind.Dll,
                 isInterface: false,
@@ -29,7 +30,7 @@ namespace Analyzer.Utilities.FlowAnalysis.Analysis.TaintedDataAnalysis
                     ("LoadModule", new[] { "moduleName" } ),
                     ("UnsafeLoadFrom", new[] { "assemblyFile" } ),
                 });
-            sinkInfosBuilder.AddSink(
+            sinkInfosBuilder.AddSinkInfo(
                 WellKnownTypes.SystemAppDomain,
                 SinkKind.Dll,
                 isInterface: false,
@@ -40,7 +41,7 @@ namespace Analyzer.Utilities.FlowAnalysis.Analysis.TaintedDataAnalysis
                     ("ExecuteAssemblyByName", new[] { "assemblyName" } ),
                     ("Load", new[] { "rawAssembly", "assemblyRef", "assemblyString", } ),
                 });
-            sinkInfosBuilder.AddSink(
+            sinkInfosBuilder.AddSinkInfo(
                 WellKnownTypes.SystemWindowsAssemblyPart,
                 SinkKind.Dll,
                 isInterface: false,
@@ -50,7 +51,7 @@ namespace Analyzer.Utilities.FlowAnalysis.Analysis.TaintedDataAnalysis
                     ("Load", new[] { "assemblyStream" } ),
                 });
 
-            SinkInfos = sinkInfosBuilder.ToImmutable();
+            SinkInfos = sinkInfosBuilder.ToImmutableAndFree();
         }
     }
 }

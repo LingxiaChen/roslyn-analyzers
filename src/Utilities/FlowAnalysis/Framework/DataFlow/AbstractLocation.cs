@@ -8,6 +8,8 @@ using Analyzer.Utilities.Extensions;
 using Microsoft.CodeAnalysis.FlowAnalysis.DataFlow.PointsToAnalysis;
 using Microsoft.CodeAnalysis.Operations;
 
+#pragma warning disable CA1067 // Override Object.Equals(object) when implementing IEquatable<T>
+
 namespace Microsoft.CodeAnalysis.FlowAnalysis.DataFlow
 {
     using PointsToAnalysisResult = DataFlowAnalysisResult<PointsToBlockAnalysisResult, PointsToAbstractValue>;
@@ -69,7 +71,7 @@ namespace Microsoft.CodeAnalysis.FlowAnalysis.DataFlow
         public bool IsNoLocation => ReferenceEquals(this, NoLocation);
         public bool IsAnalysisEntityDefaultLocation => AnalysisEntityOpt != null;
 
-        protected override void ComputeHashCodeParts(ImmutableArray<int>.Builder builder)
+        protected override void ComputeHashCodeParts(ArrayBuilder<int> builder)
         {
             builder.Add(CreationOpt.GetHashCodeOrDefault());
             builder.Add(HashUtilities.Combine(CreationCallStack));

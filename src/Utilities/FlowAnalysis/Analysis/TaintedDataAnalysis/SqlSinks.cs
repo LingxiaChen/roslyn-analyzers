@@ -4,6 +4,7 @@ using System.Collections.Generic;
 using System.Collections.Immutable;
 using System.Linq;
 using Analyzer.Utilities.Extensions;
+using Microsoft.CodeAnalysis;
 
 namespace Analyzer.Utilities.FlowAnalysis.Analysis.TaintedDataAnalysis
 {
@@ -16,9 +17,9 @@ namespace Analyzer.Utilities.FlowAnalysis.Analysis.TaintedDataAnalysis
 
         static SqlSinks()
         {
-            ImmutableHashSet<SinkInfo>.Builder sinkInfosBuilder = ImmutableHashSet.CreateBuilder<SinkInfo>();
+            var sinkInfosBuilder = PooledHashSet<SinkInfo>.GetInstance();
 
-            sinkInfosBuilder.AddSink(
+            sinkInfosBuilder.AddSinkInfo(
                 WellKnownTypes.SystemDataIDbCommand,
                 SinkKind.Sql,
                 isInterface: true,
@@ -28,7 +29,7 @@ namespace Analyzer.Utilities.FlowAnalysis.Analysis.TaintedDataAnalysis
                 },
                 sinkMethodParameters: null);
 
-            sinkInfosBuilder.AddSink(
+            sinkInfosBuilder.AddSinkInfo(
                 WellKnownTypes.SystemDataIDataAdapter,
                 SinkKind.Sql,
                 isInterface: true,
@@ -36,7 +37,7 @@ namespace Analyzer.Utilities.FlowAnalysis.Analysis.TaintedDataAnalysis
                 sinkProperties: null,
                 sinkMethodParameters: null);
 
-            sinkInfosBuilder.AddSink(
+            sinkInfosBuilder.AddSinkInfo(
                 WellKnownTypes.SystemWebUIWebControlsSqlDataSource,
                 SinkKind.Sql,
                 isInterface: false,
@@ -50,7 +51,7 @@ namespace Analyzer.Utilities.FlowAnalysis.Analysis.TaintedDataAnalysis
                 },
                 sinkMethodParameters: null);
 
-            SinkInfos = sinkInfosBuilder.ToImmutable();
+            SinkInfos = sinkInfosBuilder.ToImmutableAndFree();
         }
     }
 }

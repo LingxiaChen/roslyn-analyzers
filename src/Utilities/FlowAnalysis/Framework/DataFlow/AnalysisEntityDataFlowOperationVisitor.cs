@@ -1,9 +1,11 @@
 ﻿// Copyright (c) Microsoft.  All Rights Reserved.  Licensed under the Apache License, Version 2.0.  See License.txt in the project root for license information.
 
+using System;
 using System.Collections.Generic;
 using System.Collections.Immutable;
 using System.Diagnostics;
 using Analyzer.Utilities.Extensions;
+using Microsoft.CodeAnalysis.FlowAnalysis.DataFlow.CopyAnalysis;
 using Microsoft.CodeAnalysis.FlowAnalysis.DataFlow.PointsToAnalysis;
 using Microsoft.CodeAnalysis.Operations;
 
@@ -14,16 +16,19 @@ namespace Microsoft.CodeAnalysis.FlowAnalysis.DataFlow
     /// </summary>
     internal abstract class AnalysisEntityDataFlowOperationVisitor<TAnalysisData, TAnalysisContext, TAnalysisResult, TAbstractAnalysisValue>
         : DataFlowOperationVisitor<TAnalysisData, TAnalysisContext, TAnalysisResult, TAbstractAnalysisValue>
-        where TAnalysisContext: AbstractDataFlowAnalysisContext<TAnalysisData, TAnalysisContext, TAnalysisResult, TAbstractAnalysisValue>
+        where TAnalysisData : AbstractAnalysisData
+        where TAnalysisContext : AbstractDataFlowAnalysisContext<TAnalysisData, TAnalysisContext, TAnalysisResult, TAbstractAnalysisValue>
         where TAnalysisResult: IDataFlowAnalysisResult<TAbstractAnalysisValue>
+        where TAbstractAnalysisValue : IEquatable<TAbstractAnalysisValue>
     {
         protected AnalysisEntityDataFlowOperationVisitor(TAnalysisContext analysisContext)
             : base(analysisContext)
         {
         }
 
-        protected abstract void AddTrackedEntities(ImmutableArray<AnalysisEntity>.Builder builder);
+        protected abstract void AddTrackedEntities(PooledHashSet<AnalysisEntity> builder, bool forInterproceduralAnalysis = false);
         protected abstract void SetAbstractValue(AnalysisEntity analysisEntity, TAbstractAnalysisValue value);
+        protected abstract void ResetAbstractValue(AnalysisEntity analysisEntity);
         protected abstract TAbstractAnalysisValue GetAbstractValue(AnalysisEntity analysisEntity);
         protected abstract bool HasAbstractValue(AnalysisEntity analysisEntity);
         protected abstract void StopTrackingEntity(AnalysisEntity analysisEntity);
@@ -71,14 +76,14 @@ namespace Microsoft.CodeAnalysis.FlowAnalysis.DataFlow
         /// <summary>
         /// Helper method to reset analysis data for analysis entities.
         /// </summary>
-        protected void ResetAnalysisData(IDictionary<AnalysisEntity, TAbstractAnalysisValue> currentAnalysisDataOpt)
+        protected void ResetAnalysisData(DictionaryAnalysisData<AnalysisEntity, TAbstractAnalysisValue> currentAnalysisDataOpt)
         {
             // Reset the current analysis data, while ensuring that we don't violate the monotonicity, i.e. we cannot remove any existing key from currentAnalysisData.
             // Just set the values for existing keys to ValueDomain.UnknownOrMayBeValue.
             var keys = currentAnalysisDataOpt?.Keys.ToImmutableArray();
             foreach (var key in keys)
             {
-                SetAbstractValue(key, ValueDomain.UnknownOrMayBeValue);
+                ResetAbstractValue(key);
             }
         }
 
@@ -86,32 +91,82 @@ namespace Microsoft.CodeAnalysis.FlowAnalysis.DataFlow
         {
             base.OnLeavingRegion(region);
 
-            // Stop tracking entities for locals that are now out of scope.
-            // Additionally, stop tracking all the child entities for local if the local type has value copy semantics.
-            foreach (var local in region.Locals)
+            if (!region.Locals.IsEmpty || !region.CaptureIds.IsEmpty)
             {
-                var success = AnalysisEntityFactory.TryCreateForSymbolDeclaration(local, out var analysisEntity);
-                Debug.Assert(success);
+                var allEntities = PooledHashSet<AnalysisEntity>.GetInstance();
 
-                StopTrackingDataForEntity(analysisEntity);
+                try
+                {
+                    AddTrackedEntities(allEntities);
+                    
+                    // Stop tracking entities for locals and capture Ids that are now out of scope.
+                    foreach (var local in region.Locals)
+                    {
+                        var success = AnalysisEntityFactory.TryCreateForSymbolDeclaration(local, out var analysisEntity);
+                        Debug.Assert(success);
+
+                        StopTrackingDataForEntity(analysisEntity, allEntities);
+                    }
+
+                    foreach (var captureId in region.CaptureIds)
+                    {
+                        if (AnalysisEntityFactory.TryGetForFlowCapture(captureId, out var analysisEntity))
+                        {
+                            StopTrackingDataForEntity(analysisEntity, allEntities);
+                        }
+                    }
+                }
+                finally
+                {
+                    allEntities.Free();
+                }
             }
         }
 
-        private void StopTrackingDataForEntity(AnalysisEntity analysisEntity)
+        private void StopTrackingDataForEntity(AnalysisEntity analysisEntity, PooledHashSet<AnalysisEntity> allEntities)
         {
+            if (!allEntities.Contains(analysisEntity))
+            {
+                return;
+            }
+
+            // Stop tracking entity that is now out of scope.
             StopTrackingEntity(analysisEntity);
 
+            // Additionally, stop tracking all the child entities if the entity type has value copy semantics.
             if (analysisEntity.Type.HasValueCopySemantics())
             {
-                foreach (var childEntity in GetChildAnalysisEntities(analysisEntity))
+                foreach (var childEntity in GetChildAnalysisEntities(analysisEntity, allEntities))
                 {
                     StopTrackingEntity(childEntity);
                 }
             }
         }
 
-        protected override void StopTrackingDataForParameter(IParameterSymbol parameter, AnalysisEntity analysisEntity)
-            => StopTrackingDataForEntity(analysisEntity);
+        protected sealed override void StopTrackingDataForParameter(IParameterSymbol parameter, AnalysisEntity analysisEntity)
+            => throw new InvalidOperationException("Unreachable");
+
+        protected sealed override void StopTrackingDataForParameters(ImmutableDictionary<IParameterSymbol, AnalysisEntity> parameterEntities)
+        {
+            if (parameterEntities.Count > 0)
+            {
+                var allEntities = PooledHashSet<AnalysisEntity>.GetInstance();
+
+                try
+                {
+                    AddTrackedEntities(allEntities);
+
+                    foreach (AnalysisEntity parameterEntity in parameterEntities.Values)
+                    {
+                        StopTrackingDataForEntity(parameterEntity, allEntities);
+                    }
+                }
+                finally
+                {
+                    allEntities.Free();
+                }
+            }
+        }
 
         #region Helper methods to handle initialization/assignment operations
         protected override void SetAbstractValueForArrayElementInitializer(IArrayCreationOperation arrayCreation, ImmutableArray<AbstractIndex> indices, ITypeSymbol elementType, IOperation initializer, TAbstractAnalysisValue value)
@@ -135,7 +190,7 @@ namespace Microsoft.CodeAnalysis.FlowAnalysis.DataFlow
             }
         }
 
-        private void SetAbstractValueForAssignment(AnalysisEntity targetAnalysisEntity, IOperation assignedValueOperation, TAbstractAnalysisValue assignedValue)
+        protected virtual void SetAbstractValueForAssignment(AnalysisEntity targetAnalysisEntity, IOperation assignedValueOperation, TAbstractAnalysisValue assignedValue)
         {
             // Value type and string type assignment has copy semantics.
             if (HasPointsToAnalysisResult &&
@@ -166,7 +221,7 @@ namespace Microsoft.CodeAnalysis.FlowAnalysis.DataFlow
             }
         }
 
-        protected sealed override void SetValueForParameterOnEntry(IParameterSymbol parameter, AnalysisEntity analysisEntity, ArgumentInfo<TAbstractAnalysisValue> assignedValueOpt)
+        protected override void SetValueForParameterOnEntry(IParameterSymbol parameter, AnalysisEntity analysisEntity, ArgumentInfo<TAbstractAnalysisValue> assignedValueOpt)
         {
             Debug.Assert(analysisEntity.SymbolOpt == parameter);
             if (assignedValueOpt != null)
@@ -225,8 +280,7 @@ namespace Microsoft.CodeAnalysis.FlowAnalysis.DataFlow
         {
             foreach (var dependentAnalysisEntity in dependantAnalysisEntities)
             {
-                // Reset value.
-                SetAbstractValue(dependentAnalysisEntity, ValueDomain.UnknownOrMayBeValue);
+                ResetAbstractValue(dependentAnalysisEntity);
             }
         }
 
@@ -261,45 +315,58 @@ namespace Microsoft.CodeAnalysis.FlowAnalysis.DataFlow
             }
         }
 
-        private IEnumerable<AnalysisEntity> GetChildAnalysisEntities(AnalysisEntity analysisEntity)
+        private ImmutableHashSet<AnalysisEntity> GetChildAnalysisEntities(AnalysisEntity analysisEntity)
         {
-            var hasValueCopySemantics = analysisEntity.Type.HasValueCopySemantics();
-            foreach (var entity in GetChildAnalysisEntities(analysisEntity.InstanceLocation))
+            return GetChildAnalysisEntities(analysisEntity.InstanceLocation, entity => IsChildAnalysisEntity(entity, analysisEntity));
+        }
+
+        protected static IEnumerable<AnalysisEntity> GetChildAnalysisEntities(AnalysisEntity analysisEntity, PooledHashSet<AnalysisEntity> allEntities)
+        {
+            foreach (var entity in allEntities)
             {
-                if (!hasValueCopySemantics || entity.HasAncestor(analysisEntity))
+                if (IsChildAnalysisEntity(entity, ancestorEntity: analysisEntity))
                 {
                     yield return entity;
                 }
             }
         }
 
-        private IEnumerable<AnalysisEntity> GetTrackedEntities()
+        protected static bool IsChildAnalysisEntity(AnalysisEntity entity, AnalysisEntity ancestorEntity)
         {
-            var trackedEntitiesBuilder = ImmutableArray.CreateBuilder<AnalysisEntity>();
-            AddTrackedEntities(trackedEntitiesBuilder);
-            if (trackedEntitiesBuilder.Count > 0)
-            {
-                Debug.Assert(trackedEntitiesBuilder.ToSet().Count == trackedEntitiesBuilder.Count);
-                foreach (var entity in trackedEntitiesBuilder)
-                {
-                    yield return entity;
-                }
-            }
+            return (!ancestorEntity.Type.HasValueCopySemantics() || entity.HasAncestor(ancestorEntity)) &&
+                IsChildAnalysisEntity(entity, ancestorEntity.InstanceLocation);
         }
 
-        protected IEnumerable<AnalysisEntity> GetChildAnalysisEntities(PointsToAbstractValue instanceLocationOpt)
+        protected ImmutableHashSet<AnalysisEntity> GetChildAnalysisEntities(PointsToAbstractValue instanceLocationOpt)
+           => GetChildAnalysisEntities(instanceLocationOpt, predicateOpt: null);
+
+        private ImmutableHashSet<AnalysisEntity> GetChildAnalysisEntities(PointsToAbstractValue instanceLocationOpt, Func<AnalysisEntity, bool> predicateOpt)
         {
             // We are interested only in dependent child/member infos, not the root info.
-            if (instanceLocationOpt != null)
+            if (instanceLocationOpt == null)
             {
-                foreach (var entity in GetTrackedEntities())
-                {
-                    if (entity.InstanceLocation.Equals(instanceLocationOpt) && entity.IsChildOrInstanceMember)
-                    {
-                        yield return entity;
-                    }
-                }
+                return ImmutableHashSet<AnalysisEntity>.Empty;
             }
+
+            if (predicateOpt == null)
+            {
+                predicateOpt = entity => IsChildAnalysisEntity(entity, instanceLocationOpt);
+            }
+
+            return GetChildAnalysisEntities(predicateOpt);
+        }
+
+        protected static bool IsChildAnalysisEntity(AnalysisEntity entity, PointsToAbstractValue instanceLocation)
+        {
+            return entity.InstanceLocation.Equals(instanceLocation) && entity.IsChildOrInstanceMember;
+        }
+
+        private ImmutableHashSet<AnalysisEntity> GetChildAnalysisEntities(Func<AnalysisEntity, bool> predicate)
+        {
+            var trackedEntitiesBuilder = PooledHashSet<AnalysisEntity>.GetInstance();
+            AddTrackedEntities(trackedEntitiesBuilder);
+            trackedEntitiesBuilder.RemoveWhere(entity => !predicate(entity));
+            return trackedEntitiesBuilder.ToImmutableAndFree();
         }
 
         #endregion
@@ -342,7 +409,225 @@ namespace Microsoft.CodeAnalysis.FlowAnalysis.DataFlow
         }
         #endregion
 
-        protected IDictionary<AnalysisEntity, TAbstractAnalysisValue> GetClonedAnalysisDataHelper(IDictionary<AnalysisEntity, TAbstractAnalysisValue> analysisData)
-            => new Dictionary<AnalysisEntity, TAbstractAnalysisValue>(analysisData);
+        #region Interprocedural analysis
+        protected override TAnalysisData GetInitialInterproceduralAnalysisData(
+            IMethodSymbol invokedMethod,
+            (AnalysisEntity InstanceOpt, PointsToAbstractValue PointsToValue)? invocationInstanceOpt,
+            (AnalysisEntity Instance, PointsToAbstractValue PointsToValue)? thisOrMeInstanceForCallerOpt,
+            ImmutableArray<ArgumentInfo<TAbstractAnalysisValue>> argumentValues,
+            IDictionary<AnalysisEntity, PointsToAbstractValue> pointsToValuesOpt,
+            IDictionary<AnalysisEntity, CopyAbstractValue> copyValuesOpt,
+            bool isLambdaOrLocalFunction)
+        {
+            // PERF: For non-lambda and local functions + presence of points to values, we trim down
+            // the initial analysis data passed as input to interprocedural analysis.
+            // We retain the analysis entities for the invocation instance, arguments and this or me instance.
+            // Additionally, we also retain the transitive closure of analysis entities reachable from these
+            // entities via the PointsTo values chain (i.e., recursively compute child analysis entities).
+            // All the remaining entities are not accessible in the callee and are excluded from the initial
+            // interprocedural analysis data.
+
+            if (isLambdaOrLocalFunction || pointsToValuesOpt == null)
+            {
+                return base.GetInitialInterproceduralAnalysisData(invokedMethod, invocationInstanceOpt,
+                    thisOrMeInstanceForCallerOpt, argumentValues, pointsToValuesOpt, copyValuesOpt, isLambdaOrLocalFunction);
+            }
+
+            var candidateEntitiesBuilder = PooledHashSet<AnalysisEntity>.GetInstance();
+            var interproceduralEntitiesToRetainBuilder = PooledHashSet<AnalysisEntity>.GetInstance();
+            var worklistEntities = PooledHashSet<AnalysisEntity>.GetInstance();
+            var worklistPointsToValues = PooledHashSet<PointsToAbstractValue>.GetInstance();
+            var processedPointsToValues = PooledHashSet<PointsToAbstractValue>.GetInstance();
+            var childWorklistEntities = PooledHashSet<AnalysisEntity>.GetInstance();
+
+            try
+            {
+                // All tracked entities are candidates to be retained for initial interprocedural
+                // analysis data.
+                AddTrackedEntities(candidateEntitiesBuilder, forInterproceduralAnalysis: true);
+                var candidateEntitiesCount = candidateEntitiesBuilder.Count;
+
+                // Add entities and PointsTo values for invocation instance, this or me instance
+                // and argument values to the initial worklist
+
+                if (invocationInstanceOpt.HasValue)
+                {
+                    AddWorklistEntityAndPointsToValue(invocationInstanceOpt.Value.InstanceOpt);
+                    AddWorklistPointsToValue(invocationInstanceOpt.Value.PointsToValue);
+                }
+
+                if (thisOrMeInstanceForCallerOpt.HasValue)
+                {
+                    AddWorklistEntityAndPointsToValue(thisOrMeInstanceForCallerOpt.Value.Instance);
+                    AddWorklistPointsToValue(thisOrMeInstanceForCallerOpt.Value.PointsToValue);
+                }
+
+                foreach (var argument in argumentValues)
+                {
+                    if (!AddWorklistEntityAndPointsToValue(argument.AnalysisEntityOpt))
+                    {
+                        // For allocations passed as arguments.
+                        AddWorklistPointsToValue(argument.InstanceLocation);
+                    }
+                }
+
+                // Worklist based algorithm to compute the transitive closure of analysis entities
+                // that are accessible in the callee via the PointsTo value chain.
+                while (worklistEntities.Count > 0 || worklistPointsToValues.Count > 0)
+                {
+                    if (worklistEntities.Count > 0)
+                    {
+                        // Add all the worklistEntities to interproceduralEntitiesBuilder
+                        // to ensure these entities are retained.
+                        interproceduralEntitiesToRetainBuilder.AddRange(worklistEntities);
+
+                        // Remove the worklistEntities from tracked candidate entities.
+                        candidateEntitiesBuilder.ExceptWith(worklistEntities);
+
+                        // Add child entities of worklistEntities to childWorklistEntities.
+                        foreach (var candidateEntity in candidateEntitiesBuilder)
+                        {
+                            foreach (var ancestorEntity in worklistEntities)
+                            {
+                                if (IsChildAnalysisEntity(candidateEntity, ancestorEntity))
+                                {
+                                    childWorklistEntities.Add(candidateEntity);
+                                    break;
+                                }
+                            }
+                        }
+
+                        worklistEntities.Clear();
+                    }
+
+                    if (worklistPointsToValues.Count > 0)
+                    {
+                        // Add child entities which are accessible from PointsTo chain to childWorklistEntities.
+                        foreach (var candidateEntity in candidateEntitiesBuilder)
+                        {
+                            foreach (var pointsToValue in worklistPointsToValues)
+                            {
+                                Debug.Assert(ShouldProcessPointsToValue(pointsToValue));
+                                if (IsChildAnalysisEntity(candidateEntity, pointsToValue))
+                                {
+                                    childWorklistEntities.Add(candidateEntity);
+                                    break;
+                                }
+                            }
+                        }
+
+                        worklistPointsToValues.Clear();
+                    }
+
+                    // Move all the child work list entities and their PointsTo values to the worklist.
+                    foreach (var childEntity in childWorklistEntities)
+                    {
+                        AddWorklistEntityAndPointsToValue(childEntity);
+                    }
+
+                    childWorklistEntities.Clear();
+                }
+
+                // If all candidates being retained, just retain the cloned current analysis data.
+                if (interproceduralEntitiesToRetainBuilder.Count == candidateEntitiesCount)
+                {
+                    return GetClonedCurrentAnalysisData();
+                }
+
+                // Otherwise, return cloned current analysis data with trimmed keys.
+                return GetTrimmedCurrentAnalysisData(interproceduralEntitiesToRetainBuilder);
+            }
+            finally
+            {
+                candidateEntitiesBuilder.Free();
+                interproceduralEntitiesToRetainBuilder.Free();
+                worklistEntities.Free();
+                worklistPointsToValues.Free();
+                processedPointsToValues.Free();
+                childWorklistEntities.Free();
+            }
+
+            // Local functions.
+            bool AddWorklistEntityAndPointsToValue(AnalysisEntity analysisEntityOpt)
+            {
+                if (analysisEntityOpt != null && candidateEntitiesBuilder.Contains(analysisEntityOpt))
+                {
+                    worklistEntities.Add(analysisEntityOpt);
+
+                    if (pointsToValuesOpt.TryGetValue(analysisEntityOpt, out var pointsToValue))
+                    {
+                        AddWorklistPointsToValue(pointsToValue);
+                    }
+
+                    return true;
+                }
+
+                return false;
+            }
+
+            void AddWorklistPointsToValue(PointsToAbstractValue pointsToValue)
+            {
+                if (ShouldProcessPointsToValue(pointsToValue) &&
+                    processedPointsToValues.Add(pointsToValue))
+                {
+                    worklistPointsToValues.Add(pointsToValue);
+                }
+            }
+
+            bool ShouldProcessPointsToValue(PointsToAbstractValue pointsToValue)
+                => pointsToValue.Kind == PointsToAbstractValueKind.KnownLocations &&
+                   pointsToValue != PointsToAbstractValue.NoLocation;
+        }
+
+        /// <summary>
+        /// Returns a cloned CurrentAnalysisData, trimmed down to only have key-value pairs for the given <paramref name="withEntities"/>.
+        /// </summary>
+        protected abstract TAnalysisData GetTrimmedCurrentAnalysisData(IEnumerable<AnalysisEntity> withEntities);
+
+        protected TAnalysisData GetTrimmedCurrentAnalysisDataHelper(
+            IEnumerable<AnalysisEntity> withEntities,
+            IDictionary<AnalysisEntity, TAbstractAnalysisValue> existingValues,
+            Action<TAnalysisData, AnalysisEntity, TAbstractAnalysisValue> setAbstractValue)
+        {
+            var initialAnalysisData = GetEmptyAnalysisData();
+            foreach (var entity in withEntities)
+            {
+                setAbstractValue(initialAnalysisData, entity, existingValues[entity]);
+            }
+
+            return initialAnalysisData;
+        }
+
+        protected abstract void ApplyInterproceduralAnalysisResultCore(TAnalysisData resultData);
+
+        protected sealed override void ApplyInterproceduralAnalysisResult(TAnalysisData resultData, bool isLambdaOrLocalFunction)
+        {
+            if (isLambdaOrLocalFunction)
+            {
+                base.ApplyInterproceduralAnalysisResult(resultData, isLambdaOrLocalFunction);
+                return;
+            }
+
+            ApplyInterproceduralAnalysisResultCore(resultData);
+        }
+
+        protected void ApplyInterproceduralAnalysisResultHelper(IDictionary<AnalysisEntity, TAbstractAnalysisValue> resultToApply)
+        {
+            foreach (var kvp in resultToApply)
+            {
+                var entity = kvp.Key;
+                var newValue = kvp.Value;
+                var currentValue = GetAbstractValue(entity);
+                if (!currentValue.Equals(newValue))
+                {
+                    SetAbstractValue(entity, newValue);
+                }
+            }
+        }
+
+        #endregion
+
+        protected DictionaryAnalysisData<AnalysisEntity, TAbstractAnalysisValue> GetClonedAnalysisDataHelper(IDictionary<AnalysisEntity, TAbstractAnalysisValue> analysisData)
+            => new DictionaryAnalysisData<AnalysisEntity, TAbstractAnalysisValue>(analysisData);
     }
 }

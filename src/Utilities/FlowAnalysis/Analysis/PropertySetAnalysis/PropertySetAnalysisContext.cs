@@ -10,12 +10,14 @@ using Microsoft.CodeAnalysis.FlowAnalysis.DataFlow;
 using Microsoft.CodeAnalysis.FlowAnalysis.DataFlow.CopyAnalysis;
 using Microsoft.CodeAnalysis.FlowAnalysis.DataFlow.PointsToAnalysis;
 
+#pragma warning disable CA1067 // Override Object.Equals(object) when implementing IEquatable<T>
+
 namespace Analyzer.Utilities.FlowAnalysis.Analysis.PropertySetAnalysis
 {
     using CopyAnalysisResult = DataFlowAnalysisResult<CopyBlockAnalysisResult, CopyAbstractValue>;
-    using InterproceduralBinaryFormatterAnalysisData = InterproceduralAnalysisData<IDictionary<AbstractLocation, PropertySetAbstractValue>, PropertySetAnalysisContext, PropertySetAbstractValue>;
+    using InterproceduralBinaryFormatterAnalysisData = InterproceduralAnalysisData<DictionaryAnalysisData<AbstractLocation, PropertySetAbstractValue>, PropertySetAnalysisContext, PropertySetAbstractValue>;
     using PointsToAnalysisResult = DataFlowAnalysisResult<PointsToBlockAnalysisResult, PointsToAbstractValue>;
-    using PropertySetAnalysisData = IDictionary<AbstractLocation, PropertySetAbstractValue>;
+    using PropertySetAnalysisData = DictionaryAnalysisData<AbstractLocation, PropertySetAbstractValue>;
 
     /// <summary>
     /// Analysis context for execution of <see cref="PropertySetAnalysis"/> on a control flow graph.
@@ -27,7 +29,7 @@ namespace Analyzer.Utilities.FlowAnalysis.Analysis.PropertySetAnalysis
             WellKnownTypeProvider wellKnownTypeProvider,
             ControlFlowGraph controlFlowGraph,
             ISymbol owningSymbol,
-            InterproceduralAnalysisKind interproceduralAnalysisKind,
+            InterproceduralAnalysisConfiguration interproceduralAnalysisConfig,
             bool pessimisticAnalysis,
             PointsToAnalysisResult pointsToAnalysisResultOpt,
             Func<PropertySetAnalysisContext, PropertySetAnalysisResult> getOrComputeAnalysisResult,
@@ -38,7 +40,7 @@ namespace Analyzer.Utilities.FlowAnalysis.Analysis.PropertySetAnalysis
             string propertyToSetFlag,
             bool isNullPropertyFlagged,
             ImmutableHashSet<string> methodNamesToCheckForFlaggedUsage)
-            : base(valueDomain, wellKnownTypeProvider, controlFlowGraph, owningSymbol, interproceduralAnalysisKind, pessimisticAnalysis,
+            : base(valueDomain, wellKnownTypeProvider, controlFlowGraph, owningSymbol, interproceduralAnalysisConfig, pessimisticAnalysis,
                   predicateAnalysis: false, copyAnalysisResultOpt: null, pointsToAnalysisResultOpt: pointsToAnalysisResultOpt,
                   getOrComputeAnalysisResult: getOrComputeAnalysisResult,
                   parentControlFlowGraphOpt: parentControlFlowGraphOpt,
@@ -56,7 +58,7 @@ namespace Analyzer.Utilities.FlowAnalysis.Analysis.PropertySetAnalysis
             WellKnownTypeProvider wellKnownTypeProvider,
             ControlFlowGraph controlFlowGraph,
             ISymbol owningSymbol,
-            InterproceduralAnalysisKind interproceduralAnalysisKind,
+            InterproceduralAnalysisConfiguration interproceduralAnalysisConfig,
             bool pessimisticAnalysis,
             PointsToAnalysisResult pointsToAnalysisResultOpt,
             Func<PropertySetAnalysisContext, PropertySetAnalysisResult> getOrComputeAnalysisResult,
@@ -72,7 +74,7 @@ namespace Analyzer.Utilities.FlowAnalysis.Analysis.PropertySetAnalysis
                 wellKnownTypeProvider, 
                 controlFlowGraph,
                 owningSymbol,
-                interproceduralAnalysisKind,
+                interproceduralAnalysisConfig,
                 pessimisticAnalysis,
                 pointsToAnalysisResultOpt, 
                 getOrComputeAnalysisResult, 
@@ -97,7 +99,7 @@ namespace Analyzer.Utilities.FlowAnalysis.Analysis.PropertySetAnalysis
             Debug.Assert(copyAnalysisResultOpt == null);
 
             return new PropertySetAnalysisContext(
-                ValueDomain, WellKnownTypeProvider, invokedCfg, invokedMethod, InterproceduralAnalysisKind,
+                ValueDomain, WellKnownTypeProvider, invokedCfg, invokedMethod, InterproceduralAnalysisConfiguration,
                 PessimisticAnalysis, pointsToAnalysisResultOpt, GetOrComputeAnalysisResult, ControlFlowGraph,
                 interproceduralAnalysisData,
                 this.TypeToTrackMetadataName,
@@ -134,7 +136,7 @@ namespace Analyzer.Utilities.FlowAnalysis.Analysis.PropertySetAnalysis
         public ImmutableHashSet<string> MethodNamesToCheckForFlaggedUsage { get; }
 
 #pragma warning disable CA1307 // Specify StringComparison - string.GetHashCode(StringComparison) not available in all projects that reference this shared project
-        protected override void ComputeHashCodePartsSpecific(ImmutableArray<int>.Builder builder)
+        protected override void ComputeHashCodePartsSpecific(ArrayBuilder<int> builder)
         {
             builder.Add(TypeToTrackMetadataName.GetHashCode());
             builder.Add(IsNewInstanceFlagged.GetHashCode());

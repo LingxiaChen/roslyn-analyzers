@@ -44,10 +44,8 @@ namespace Analyzer.Utilities.FlowAnalysis.Analysis.TaintedDataAnalysis
                 return builder.ToImmutableArray();
             }
 
-            protected override void AddTrackedEntities(ImmutableArray<AnalysisEntity>.Builder builder)
-            {
-                this.CurrentAnalysisData.AddTrackedEntities(builder);
-            }
+            protected override void AddTrackedEntities(PooledHashSet<AnalysisEntity> builder, bool forInterproceduralAnalysis)
+                => CurrentAnalysisData.AddTrackedEntities(builder);
 
             protected override bool Equals(TaintedDataAnalysisData value1, TaintedDataAnalysisData value2)
             {
@@ -89,14 +87,14 @@ namespace Analyzer.Utilities.FlowAnalysis.Analysis.TaintedDataAnalysis
                 this.CurrentAnalysisData.Reset(this.ValueDomain.UnknownOrMayBeValue);
             }
 
-            protected override TaintedDataAnalysisData GetEmptyAnalysisData()
+            public override TaintedDataAnalysisData GetEmptyAnalysisData()
             {
                 return new TaintedDataAnalysisData();
             }
 
-            protected override TaintedDataAnalysisData GetAnalysisDataAtBlockEnd(TaintedDataAnalysisResult analysisResult, BasicBlock block)
+            protected override TaintedDataAnalysisData GetExitBlockOutputData(TaintedDataAnalysisResult analysisResult)
             {
-                return new TaintedDataAnalysisData(analysisResult[block].OutputData);
+                return new TaintedDataAnalysisData(analysisResult.ExitBlockOutput.Data);
             }
 
             protected override void SetAbstractValue(AnalysisEntity analysisEntity, TaintedDataAbstractValue value)
@@ -106,8 +104,16 @@ namespace Analyzer.Utilities.FlowAnalysis.Analysis.TaintedDataAnalysis
                 {
                     // Only track tainted data, or sanitized data.
                     // If it's new, and it's untainted, we don't care.
-                    this.CurrentAnalysisData.SetAbstractValue(analysisEntity, value);
+                    SetAbstractValueCore(CurrentAnalysisData, analysisEntity, value);
                 }
+            }
+
+            private static void SetAbstractValueCore(TaintedDataAnalysisData taintedAnalysisData, AnalysisEntity analysisEntity, TaintedDataAbstractValue value)
+                => taintedAnalysisData.SetAbstractValue(analysisEntity, value);
+
+            protected override void ResetAbstractValue(AnalysisEntity analysisEntity)
+            {
+                this.SetAbstractValue(analysisEntity, ValueDomain.UnknownOrMayBeValue);
             }
 
             protected override void StopTrackingEntity(AnalysisEntity analysisEntity)
@@ -205,7 +211,7 @@ namespace Analyzer.Utilities.FlowAnalysis.Analysis.TaintedDataAnalysis
                 IEnumerable<IArgumentOperation> taintedArguments = GetTaintedArguments(visitedArguments);
                 if (taintedArguments.Any())
                 {
-                    ProcessTaintedDataEnteringInvocationOrCreation(method, visitedArguments, originalOperation);
+                    ProcessTaintedDataEnteringInvocationOrCreation(method, taintedArguments, originalOperation);
                 }
 
                 if (this.IsSanitizingMethod(method))
@@ -228,7 +234,7 @@ namespace Analyzer.Utilities.FlowAnalysis.Analysis.TaintedDataAnalysis
                 IEnumerable<IArgumentOperation> taintedArguments = GetTaintedArguments(visitedArguments);
                 if (taintedArguments.Any())
                 {
-                    ProcessTaintedDataEnteringInvocationOrCreation(localFunction, visitedArguments, originalOperation);
+                    ProcessTaintedDataEnteringInvocationOrCreation(localFunction, taintedArguments, originalOperation);
                 }
 
                 return baseValue;
@@ -435,7 +441,7 @@ namespace Analyzer.Utilities.FlowAnalysis.Analysis.TaintedDataAnalysis
                 Lazy<HashSet<SinkKind>> lazySinkKinds = new Lazy<HashSet<SinkKind>>(() => new HashSet<SinkKind>());
                 foreach (SinkInfo sinkInfo in this.DataFlowAnalysisContext.SinkInfos.GetInfosForType(method.ContainingType))
                 {
-                    if (lazySinkKinds.IsValueCreated && lazySinkKinds.Value.Contains(sinkInfo.SinkKind))
+                    if (lazySinkKinds.IsValueCreated && lazySinkKinds.Value.IsSupersetOf(sinkInfo.SinkKinds))
                     {
                         continue;
                     }
@@ -444,12 +450,12 @@ namespace Analyzer.Utilities.FlowAnalysis.Analysis.TaintedDataAnalysis
                         && sinkInfo.IsAnyStringParameterInConstructorASink
                         && taintedArguments.Any(a => a.Parameter.Type.SpecialType == SpecialType.System_String))
                     {
-                        lazySinkKinds.Value.Add(sinkInfo.SinkKind);
+                        lazySinkKinds.Value.UnionWith(sinkInfo.SinkKinds);
                     }
                     else if (sinkInfo.SinkMethodParameters.TryGetValue(method.MetadataName, out ImmutableHashSet<string> sinkParameters)
                         && taintedArguments.Any(a => sinkParameters.Contains(a.Parameter.MetadataName)))
                     {
-                        lazySinkKinds.Value.Add(sinkInfo.SinkKind);
+                        lazySinkKinds.Value.UnionWith(sinkInfo.SinkKinds);
                     }
                 }
 
@@ -474,14 +480,14 @@ namespace Analyzer.Utilities.FlowAnalysis.Analysis.TaintedDataAnalysis
                 Lazy<HashSet<SinkKind>> lazySinkKinds = new Lazy<HashSet<SinkKind>>(() => new HashSet<SinkKind>());
                 foreach (SinkInfo sinkInfo in this.DataFlowAnalysisContext.SinkInfos.GetInfosForType(propertyReferenceOperation.Member.ContainingType))
                 {
-                    if (lazySinkKinds.IsValueCreated && lazySinkKinds.Value.Contains(sinkInfo.SinkKind))
+                    if (lazySinkKinds.IsValueCreated && lazySinkKinds.Value.IsSupersetOf(sinkInfo.SinkKinds))
                     {
                         continue;
                     }
 
                     if (sinkInfo.SinkProperties.Contains(propertyReferenceOperation.Member.MetadataName))
                     {
-                        lazySinkKinds.Value.Add(sinkInfo.SinkKind);
+                        lazySinkKinds.Value.UnionWith(sinkInfo.SinkKinds);
                     }
                 }
 
@@ -505,6 +511,13 @@ namespace Analyzer.Utilities.FlowAnalysis.Analysis.TaintedDataAnalysis
                              || a.Parameter.RefKind == RefKind.Ref
                              || a.Parameter.RefKind == RefKind.In));
             }
+
+            protected override void ApplyInterproceduralAnalysisResultCore(TaintedDataAnalysisData resultData)
+                => ApplyInterproceduralAnalysisResultHelper(resultData.CoreAnalysisData);
+
+            protected override TaintedDataAnalysisData GetTrimmedCurrentAnalysisData(IEnumerable<AnalysisEntity> withEntities)
+                => GetTrimmedCurrentAnalysisDataHelper(withEntities, CurrentAnalysisData.CoreAnalysisData, SetAbstractValueCore);
+
         }
     }
 }

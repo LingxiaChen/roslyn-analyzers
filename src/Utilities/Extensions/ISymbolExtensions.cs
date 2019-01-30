@@ -7,6 +7,7 @@ using System.Diagnostics;
 using System.Linq;
 using System.Threading;
 using Microsoft.CodeAnalysis;
+using Microsoft.CodeAnalysis.Diagnostics;
 
 namespace Analyzer.Utilities.Extensions
 {
@@ -20,10 +21,47 @@ namespace Analyzer.Utilities.Extensions
 
         public static bool IsAccessorMethod(this ISymbol symbol)
         {
-            var accessorSymbol = symbol as IMethodSymbol;
-            return accessorSymbol != null &&
-                (accessorSymbol.MethodKind == MethodKind.PropertySet || accessorSymbol.MethodKind == MethodKind.PropertyGet ||
-                accessorSymbol.MethodKind == MethodKind.EventRemove || accessorSymbol.MethodKind == MethodKind.EventAdd);
+            return symbol is IMethodSymbol accessorSymbol &&
+                (accessorSymbol.IsPropertyAccessor() || accessorSymbol.IsEventAccessor());
+        }
+
+        public static IEnumerable<IMethodSymbol> GetAccessors(this ISymbol symbol)
+        {
+            switch (symbol.Kind)
+            {
+                case SymbolKind.Property:
+                    var property = (IPropertySymbol)symbol;
+                    if (property.GetMethod != null)
+                    {
+                        yield return property.GetMethod;
+                    }
+
+                    if (property.SetMethod != null)
+                    {
+                        yield return property.SetMethod;
+                    }
+
+                    break;
+
+                case SymbolKind.Event:
+                    var eventSymbol = (IEventSymbol)symbol;
+                    if (eventSymbol.AddMethod != null)
+                    {
+                        yield return eventSymbol.AddMethod;
+                    }
+
+                    if (eventSymbol.RemoveMethod != null)
+                    {
+                        yield return eventSymbol.RemoveMethod;
+                    }
+
+                    if (eventSymbol.RaiseMethod != null)
+                    {
+                        yield return eventSymbol.RaiseMethod;
+                    }
+
+                    break;
+            }
         }
 
         public static bool IsDefaultConstructor(this ISymbol symbol)
@@ -90,6 +128,24 @@ namespace Analyzer.Utilities.Extensions
                 (IMethodSymbol m) => m.Parameters,
                 (IPropertySymbol p) => p.Parameters,
                 _ => ImmutableArray.Create<IParameterSymbol>());
+        }
+
+        /// <summary>
+        /// Returns true if the given symbol has required visibility based on options:
+        ///   1. If user has explicitly configured candidate <see cref="SymbolVisibilityGroup"/> in editor config options and
+        ///      given symbol's visibility is one of the candidate visibilites.
+        ///   2. Otherwise, if user has not configured visibility, and given symbol's visibility
+        ///      matches the given default symbol visibility.
+        /// </summary>
+        public static bool MatchesConfiguredVisibility(
+            this ISymbol symbol,
+            AnalyzerOptions options,
+            DiagnosticDescriptor rule,
+            CancellationToken cancellationToken,
+            SymbolVisibilityGroup defaultRequiredVisibility = SymbolVisibilityGroup.Public)
+        {
+            var allowedVisibilities = options.GetSymbolVisibilityGroupOption(rule, defaultRequiredVisibility, cancellationToken);
+            return allowedVisibilities.Contains(symbol.GetResultantVisibility());
         }
 
         /// <summary>
@@ -267,6 +323,27 @@ namespace Analyzer.Utilities.Extensions
         }
 
         /// <summary>
+        /// Check whether parameter count and parameter types of the given methods are same.
+        /// </summary>
+        public static bool ParametersAreSame(this IMethodSymbol method1, IMethodSymbol method2)
+        {
+            if (method1.Parameters.Length != method2.Parameters.Length)
+            {
+                return false;
+            }
+
+            for (int index = 0; index < method1.Parameters.Length; index++)
+            {
+                if (!ParameterTypesAreSame(method1.Parameters[index], method2.Parameters[index]))
+                {
+                    return false;
+                }
+            }
+
+            return true;
+        }
+
+        /// <summary>
         /// Check whether parameter types of the given methods are same for given parameter indices.
         /// </summary>
         public static bool ParameterTypesAreSame(this IMethodSymbol method1, IMethodSymbol method2, IEnumerable<int> parameterIndices, CancellationToken cancellationToken)
@@ -275,19 +352,7 @@ namespace Analyzer.Utilities.Extensions
             {
                 cancellationToken.ThrowIfCancellationRequested();
 
-                var type1 = method1.Parameters[index].Type.OriginalDefinition;
-                var type2 = method2.Parameters[index].Type.OriginalDefinition;
-                
-                if (type1.TypeKind == TypeKind.TypeParameter &&
-                    type2.TypeKind == TypeKind.TypeParameter &&
-                    ((ITypeParameterSymbol)type1).Ordinal == ((ITypeParameterSymbol)type2).Ordinal)
-                {
-                    continue;
-                }
-
-                // this doesnt account for type conversion but FxCop implementation seems doesnt either
-                // so this should match FxCop implementation.
-                if (!type2.Equals(type1))
+                if (!ParameterTypesAreSame(method1.Parameters[index], method2.Parameters[index]))
                 {
                     return false;
                 }
@@ -295,6 +360,30 @@ namespace Analyzer.Utilities.Extensions
 
             return true;
         }
+
+        private static bool ParameterTypesAreSame(this IParameterSymbol parameter1, IParameterSymbol parameter2)
+        {
+            var type1 = parameter1.Type.OriginalDefinition;
+            var type2 = parameter2.Type.OriginalDefinition;
+
+            if (type1.TypeKind == TypeKind.TypeParameter &&
+                type2.TypeKind == TypeKind.TypeParameter &&
+                ((ITypeParameterSymbol)type1).Ordinal == ((ITypeParameterSymbol)type2).Ordinal)
+            {
+                return true;
+            }
+
+            // this doesnt account for type conversion but FxCop implementation seems doesnt either
+            // so this should match FxCop implementation.
+            return type2.Equals(type1);
+        }
+
+        /// <summary>
+        /// Check whether return type, parameters count and parameter types are same for the given methods.
+        /// </summary>
+        public static bool ReturnTypeAndParametersAreSame(this IMethodSymbol method, IMethodSymbol otherMethod)
+            => method.ReturnType.Equals(otherMethod.ReturnType) &&
+               method.ParametersAreSame(otherMethod);
 
         /// <summary>
         /// Check whether given symbol is from mscorlib
@@ -495,6 +584,14 @@ namespace Analyzer.Utilities.Extensions
         public static bool HasAttribute(this ISymbol symbol, INamedTypeSymbol attribute)
         {
             return symbol.GetAttributes().Any(attr => attr.AttributeClass.Equals(attribute));
+        }
+
+        /// <summary>
+        /// Indicates if a symbol has at least one location in source.
+        /// </summary>
+        public static bool IsInSource(this ISymbol symbol)
+        {
+            return symbol.Locations.Any(l => l.IsInSource);
         }
     }
 }

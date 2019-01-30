@@ -1,23 +1,20 @@
 ﻿// Copyright (c) Microsoft.  All Rights Reserved.  Licensed under the Apache License, Version 2.0.  See License.txt in the project root for license information.
 
 using System.Diagnostics;
+using System.Threading;
+using Microsoft.CodeAnalysis.Diagnostics;
 
 namespace Microsoft.CodeAnalysis.FlowAnalysis.DataFlow.CopyAnalysis
 {
-    using CopyAnalysisDomain = PredicatedAnalysisDataDomain<CopyAnalysisData, CopyAbstractValue>;
     using CopyAnalysisResult = DataFlowAnalysisResult<CopyBlockAnalysisResult, CopyAbstractValue>;
-    using InterproceduralCopyAnalysisData = InterproceduralAnalysisData<CopyAnalysisData, CopyAnalysisContext, CopyAbstractValue>;
-    using PointsToAnalysisResult = DataFlowAnalysisResult<PointsToAnalysis.PointsToBlockAnalysisResult, PointsToAnalysis.PointsToAbstractValue>;
 
     /// <summary>
     /// Dataflow analysis to track <see cref="AnalysisEntity"/> instances that share the same value.
     /// </summary>
     internal partial class CopyAnalysis : ForwardDataFlowAnalysis<CopyAnalysisData, CopyAnalysisContext, CopyAnalysisResult, CopyBlockAnalysisResult, CopyAbstractValue>
     {
-        private static readonly CopyAnalysisDomain s_AnalysisDomain = new CopyAnalysisDomain(CoreCopyAnalysisDataDomain.Instance);
-
         private CopyAnalysis(CopyDataFlowOperationVisitor operationVisitor)
-            : base(s_AnalysisDomain, operationVisitor)
+            : base(operationVisitor.AnalysisDomain, operationVisitor)
         {
         }
 
@@ -25,16 +22,33 @@ namespace Microsoft.CodeAnalysis.FlowAnalysis.DataFlow.CopyAnalysis
             ControlFlowGraph cfg,
             ISymbol owningSymbol,
             WellKnownTypeProvider wellKnownTypeProvider,
+            AnalyzerOptions analyzerOptions,
+            DiagnosticDescriptor rule,
+            CancellationToken cancellationToken,
             InterproceduralAnalysisKind interproceduralAnalysisKind = InterproceduralAnalysisKind.None,
+            bool pessimisticAnalysis = true,
+            bool performPointsToAnalysis = true)
+        {
+            var interproceduralAnalysisConfig = InterproceduralAnalysisConfiguration.Create(
+                analyzerOptions, rule, interproceduralAnalysisKind, cancellationToken);
+            return GetOrComputeResult(cfg, owningSymbol, wellKnownTypeProvider,
+                interproceduralAnalysisConfig, pessimisticAnalysis, performPointsToAnalysis);
+        }
+
+        public static CopyAnalysisResult GetOrComputeResult(
+            ControlFlowGraph cfg,
+            ISymbol owningSymbol,
+            WellKnownTypeProvider wellKnownTypeProvider,
+            InterproceduralAnalysisConfiguration interproceduralAnalysisConfig,
             bool pessimisticAnalysis = true,
             bool performPointsToAnalysis = true)
         {
             var pointsToAnalysisResultOpt = performPointsToAnalysis ?
                 PointsToAnalysis.PointsToAnalysis.GetOrComputeResult(
-                    cfg, owningSymbol, wellKnownTypeProvider, interproceduralAnalysisKind, pessimisticAnalysis, performCopyAnalysis: false) :
+                    cfg, owningSymbol, wellKnownTypeProvider, interproceduralAnalysisConfig, pessimisticAnalysis, performCopyAnalysis: false) :
                 null;
             var analysisContext = CopyAnalysisContext.Create(CopyAbstractValueDomain.Default, wellKnownTypeProvider,
-                cfg, owningSymbol, interproceduralAnalysisKind, pessimisticAnalysis, pointsToAnalysisResultOpt, GetOrComputeResultForAnalysisContext);
+                cfg, owningSymbol, interproceduralAnalysisConfig, pessimisticAnalysis, pointsToAnalysisResultOpt, GetOrComputeResultForAnalysisContext);
             return GetOrComputeResultForAnalysisContext(analysisContext);
         }
 
@@ -45,14 +59,8 @@ namespace Microsoft.CodeAnalysis.FlowAnalysis.DataFlow.CopyAnalysis
             return copyAnalysis.GetOrComputeResultCore(analysisContext, cacheResult: true);
         }
 
-        [Conditional("DEBUG")]
-        public static void AssertValidCopyAnalysisData(CopyAnalysisData data)
-        {
-            data.AssertValidCopyAnalysisData();
-        }
-
         internal override CopyAnalysisResult ToResult(CopyAnalysisContext analysisContext, CopyAnalysisResult dataFlowAnalysisResult) => dataFlowAnalysisResult;
-        internal override CopyBlockAnalysisResult ToBlockResult(BasicBlock basicBlock, DataFlowAnalysisInfo<CopyAnalysisData> blockAnalysisData)
+        internal override CopyBlockAnalysisResult ToBlockResult(BasicBlock basicBlock, CopyAnalysisData blockAnalysisData)
             => new CopyBlockAnalysisResult(basicBlock, blockAnalysisData);
     }
 }

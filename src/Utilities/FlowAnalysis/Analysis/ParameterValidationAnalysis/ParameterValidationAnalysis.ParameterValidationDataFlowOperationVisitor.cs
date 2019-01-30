@@ -12,7 +12,7 @@ using Microsoft.CodeAnalysis.Operations;
 
 namespace Microsoft.CodeAnalysis.FlowAnalysis.DataFlow.ParameterValidationAnalysis
 {
-    using ParameterValidationAnalysisData = IDictionary<AbstractLocation, ParameterValidationAbstractValue>;
+    using ParameterValidationAnalysisData = DictionaryAnalysisData<AbstractLocation, ParameterValidationAbstractValue>;
 
     internal partial class ParameterValidationAnalysis : ForwardDataFlowAnalysis<ParameterValidationAnalysisData, ParameterValidationAnalysisContext, ParameterValidationAnalysisResult, ParameterValidationBlockAnalysisResult, ParameterValidationAbstractValue>
     {
@@ -22,7 +22,6 @@ namespace Microsoft.CodeAnalysis.FlowAnalysis.DataFlow.ParameterValidationAnalys
         private sealed class ParameterValidationDataFlowOperationVisitor :
             AbstractLocationDataFlowOperationVisitor<ParameterValidationAnalysisData, ParameterValidationAnalysisContext, ParameterValidationAnalysisResult, ParameterValidationAbstractValue>
         {
-            private const int MaxInterproceduralCallChain = 1;
             private readonly ImmutableDictionary<IParameterSymbol, SyntaxNode>.Builder _hazardousParameterUsageBuilderOpt;
 
             public ParameterValidationDataFlowOperationVisitor(ParameterValidationAnalysisContext analysisContext)
@@ -50,9 +49,6 @@ namespace Microsoft.CodeAnalysis.FlowAnalysis.DataFlow.ParameterValidationAnalys
                     return _hazardousParameterUsageBuilderOpt.ToImmutable();
                 }
             }
-
-            // We only want to track method calls one level down.
-            protected override int GetAllowedInterproceduralCallChain() => MaxInterproceduralCallChain;
 
             protected override ParameterValidationAbstractValue GetAbstractDefaultValue(ITypeSymbol type) => ValueDomain.Bottom;
 
@@ -188,10 +184,10 @@ namespace Microsoft.CodeAnalysis.FlowAnalysis.DataFlow.ParameterValidationAnalys
                 => ParameterValidationAnalysisDomainInstance.Merge(value1, value2);
             protected override ParameterValidationAnalysisData GetClonedAnalysisData(ParameterValidationAnalysisData analysisData)
                 => GetClonedAnalysisDataHelper(analysisData);
-            protected override ParameterValidationAnalysisData GetEmptyAnalysisData()
+            public override ParameterValidationAnalysisData GetEmptyAnalysisData()
                 => GetEmptyAnalysisDataHelper();
-            protected override ParameterValidationAnalysisData GetAnalysisDataAtBlockEnd(ParameterValidationAnalysisResult analysisResult, BasicBlock block)
-                => GetClonedAnalysisDataHelper(analysisResult[block].OutputData);
+            protected override ParameterValidationAnalysisData GetExitBlockOutputData(ParameterValidationAnalysisResult analysisResult)
+                => GetClonedAnalysisDataHelper(analysisResult.ExitBlockOutput.Data);
             protected override bool Equals(ParameterValidationAnalysisData value1, ParameterValidationAnalysisData value2)
                 => EqualsHelper(value1, value2);
 

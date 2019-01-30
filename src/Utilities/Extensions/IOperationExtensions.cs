@@ -495,8 +495,8 @@ namespace Analyzer.Utilities.Extensions
         /// <param name="lambdaOrLocalFunction">Method symbol for the lambda or local function.</param>
         public static ImmutableHashSet<ISymbol> GetCaptures(this IOperation operation, IMethodSymbol lambdaOrLocalFunction)
         {
-            Debug.Assert(operation is IAnonymousFunctionOperation anonymousFunction && anonymousFunction.Symbol == lambdaOrLocalFunction ||
-                         operation is ILocalFunctionOperation localFunction && localFunction.Symbol == lambdaOrLocalFunction);
+            Debug.Assert(operation is IAnonymousFunctionOperation anonymousFunction && anonymousFunction.Symbol.OriginalDefinition.ReturnTypeAndParametersAreSame(lambdaOrLocalFunction.OriginalDefinition) ||
+                         operation is ILocalFunctionOperation localFunction && localFunction.Symbol.OriginalDefinition.Equals(lambdaOrLocalFunction.OriginalDefinition));
 
             lambdaOrLocalFunction = lambdaOrLocalFunction.OriginalDefinition;
 
@@ -578,5 +578,21 @@ namespace Analyzer.Utilities.Extensions
         public static bool IsWithinLambdaOrLocalFunction(this IOperation operation)
             => operation.GetAncestor<IAnonymousFunctionOperation>(OperationKind.AnonymousFunction) != null ||
                operation.GetAncestor<ILocalFunctionOperation>(OperationKind.LocalFunction) != null;
+
+        public static ITypeSymbol GetPatternType(this IPatternOperation pattern)
+        {
+            switch (pattern)
+            {
+                case IDeclarationPatternOperation declarationPattern:
+                    return ((ILocalSymbol)declarationPattern.DeclaredSymbol).Type;
+
+                case IConstantPatternOperation constantPattern:
+                    return constantPattern.Value.Type;
+
+                default:
+                    Debug.Fail($"Unhandled pattern kind '{pattern.Kind}'");
+                    return null;
+            }
+        }
     }
 }

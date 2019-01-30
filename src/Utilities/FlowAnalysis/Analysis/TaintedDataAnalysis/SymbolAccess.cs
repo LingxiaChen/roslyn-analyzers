@@ -7,6 +7,8 @@ using Microsoft.CodeAnalysis.FlowAnalysis.DataFlow;
 
 namespace Analyzer.Utilities.FlowAnalysis.Analysis.TaintedDataAnalysis
 {
+#pragma warning disable CA1067 // Override Object.Equals(object) when implementing IEquatable<T>
+
     /// <summary>
     /// Represents an access to a symbol.
     /// </summary>
@@ -47,7 +49,7 @@ namespace Analyzer.Utilities.FlowAnalysis.Analysis.TaintedDataAnalysis
         /// </summary>
         public ISymbol AccessingMethod { get; }
 
-        protected override void ComputeHashCodeParts(ImmutableArray<int>.Builder builder)
+        protected override void ComputeHashCodeParts(ArrayBuilder<int> builder)
         {
             builder.Add(Location.GetHashCode());
             builder.Add(Symbol.GetHashCode());

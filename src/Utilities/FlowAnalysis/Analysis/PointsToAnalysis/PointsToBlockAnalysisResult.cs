@@ -10,45 +10,14 @@ namespace Microsoft.CodeAnalysis.FlowAnalysis.DataFlow.PointsToAnalysis
     /// </summary>
     internal class PointsToBlockAnalysisResult : AbstractBlockAnalysisResult
     {
-        public PointsToBlockAnalysisResult(
-            BasicBlock basicBlock,
-            DataFlowAnalysisInfo<PointsToAnalysisData> blockAnalysisData,
-            ImmutableDictionary<AnalysisEntity, PointsToAbstractValue> defaultPointsToValues)
+        public PointsToBlockAnalysisResult(BasicBlock basicBlock, PointsToAnalysisData blockAnalysisData)
             : base (basicBlock)
         {
-            InputData = GetResult(blockAnalysisData.Input, defaultPointsToValues);
-            OutputData = GetResult(blockAnalysisData.Output, defaultPointsToValues);
-            IsReachable = blockAnalysisData.Input?.IsReachableBlockData ?? true;
+            Data = blockAnalysisData?.CoreAnalysisData.ToImmutableDictionary() ?? ImmutableDictionary<AnalysisEntity, PointsToAbstractValue>.Empty;
+            IsReachable = blockAnalysisData?.IsReachableBlockData ?? true;
         }
 
-        private static ImmutableDictionary<AnalysisEntity, PointsToAbstractValue> GetResult(PointsToAnalysisData analysisData, ImmutableDictionary<AnalysisEntity, PointsToAbstractValue> defaultPointsToValues)
-        {
-            PointsToAnalysisData.AssertValidPointsToAnalysisData(defaultPointsToValues);
-
-            if (analysisData == null || analysisData.CoreAnalysisData.Count == 0)
-            {
-                return defaultPointsToValues;
-            }
-
-            analysisData.AssertValidPointsToAnalysisData();
-
-            var builder = ImmutableDictionary.CreateBuilder<AnalysisEntity, PointsToAbstractValue>();
-            builder.AddRange(analysisData.CoreAnalysisData);
-            foreach (var kvp in defaultPointsToValues)
-            {
-                AnalysisEntity entity = kvp.Key;
-                if (!builder.ContainsKey(entity))
-                {
-                    PointsToAbstractValue pointsToAbstractValue = kvp.Value;
-                    builder.Add(entity, pointsToAbstractValue);
-                }
-            }
-
-            return builder.ToImmutable();
-        }
-
-        public ImmutableDictionary<AnalysisEntity, PointsToAbstractValue> InputData { get; }
-        public ImmutableDictionary<AnalysisEntity, PointsToAbstractValue> OutputData { get; }
+        public ImmutableDictionary<AnalysisEntity, PointsToAbstractValue> Data { get; }
         public bool IsReachable { get; }
     }
 }

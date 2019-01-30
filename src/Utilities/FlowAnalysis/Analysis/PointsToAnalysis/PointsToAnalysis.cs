@@ -1,6 +1,9 @@
 ﻿// Copyright (c) Microsoft.  All Rights Reserved.  Licensed under the Apache License, Version 2.0.  See License.txt in the project root for license information.
 
 using System.Diagnostics;
+using System.Threading;
+using Analyzer.Utilities.Extensions;
+using Microsoft.CodeAnalysis.Diagnostics;
 
 namespace Microsoft.CodeAnalysis.FlowAnalysis.DataFlow.PointsToAnalysis
 {
@@ -23,12 +26,29 @@ namespace Microsoft.CodeAnalysis.FlowAnalysis.DataFlow.PointsToAnalysis
             ControlFlowGraph cfg,
             ISymbol owningSymbol,
             WellKnownTypeProvider wellKnownTypeProvider,
+            AnalyzerOptions analyzerOptions,
+            DiagnosticDescriptor rule,
+            CancellationToken cancellationToken,
             InterproceduralAnalysisKind interproceduralAnalysisKind = InterproceduralAnalysisKind.None,
             bool pessimisticAnalysis = true,
             bool performCopyAnalysis = true)
         {
+            var interproceduralAnalysisConfig = InterproceduralAnalysisConfiguration.Create(
+                analyzerOptions, rule, interproceduralAnalysisKind, cancellationToken);
             return GetOrComputeResult(cfg, owningSymbol, wellKnownTypeProvider,
-                out var _, interproceduralAnalysisKind, pessimisticAnalysis, performCopyAnalysis);
+                out var _, interproceduralAnalysisConfig, pessimisticAnalysis, performCopyAnalysis);
+        }
+
+        public static PointsToAnalysisResult GetOrComputeResult(
+            ControlFlowGraph cfg,
+            ISymbol owningSymbol,
+            WellKnownTypeProvider wellKnownTypeProvider,
+            InterproceduralAnalysisConfiguration interproceduralAnalysisConfig,
+            bool pessimisticAnalysis = true,
+            bool performCopyAnalysis = true)
+        {
+            return GetOrComputeResult(cfg, owningSymbol, wellKnownTypeProvider,
+                out var _, interproceduralAnalysisConfig, pessimisticAnalysis, performCopyAnalysis);
         }
 
         public static PointsToAnalysisResult GetOrComputeResult(
@@ -36,27 +56,35 @@ namespace Microsoft.CodeAnalysis.FlowAnalysis.DataFlow.PointsToAnalysis
             ISymbol owningSymbol,
             WellKnownTypeProvider wellKnownTypeProvider,
             out CopyAnalysisResult copyAnalysisResultOpt,
-            InterproceduralAnalysisKind interproceduralAnalysisKind = InterproceduralAnalysisKind.None,
+            InterproceduralAnalysisConfiguration interproceduralAnalysisConfig,
             bool pessimisticAnalysis = true,
             bool performCopyAnalysis = true)
         {
             copyAnalysisResultOpt = performCopyAnalysis ?
                 CopyAnalysis.CopyAnalysis.GetOrComputeResult(
-                    cfg, owningSymbol, wellKnownTypeProvider, interproceduralAnalysisKind, pessimisticAnalysis) :
+                    cfg, owningSymbol, wellKnownTypeProvider, interproceduralAnalysisConfig, pessimisticAnalysis) :
                 null;
             var analysisContext = PointsToAnalysisContext.Create(PointsToAbstractValueDomain.Default, wellKnownTypeProvider, cfg,
-                owningSymbol, interproceduralAnalysisKind, pessimisticAnalysis, copyAnalysisResultOpt, GetOrComputeResultForAnalysisContext);
+                owningSymbol, interproceduralAnalysisConfig, pessimisticAnalysis, copyAnalysisResultOpt, GetOrComputeResultForAnalysisContext);
             return GetOrComputeResultForAnalysisContext(analysisContext);
         }
 
         private static PointsToAnalysisResult GetOrComputeResultForAnalysisContext(PointsToAnalysisContext analysisContext)
         {
-            var defaultPointsToValueGenerator = new DefaultPointsToValueGenerator();
-            var analysisDomain = new PointsToAnalysisDomain(defaultPointsToValueGenerator);
-            var operationVisitor = new PointsToDataFlowOperationVisitor(defaultPointsToValueGenerator, analysisDomain, analysisContext);
-            var pointsToAnalysis = new PointsToAnalysis(analysisDomain, operationVisitor);
-            return pointsToAnalysis.GetOrComputeResultCore(analysisContext, cacheResult: true);
+            using (var trackedEntitiesBuilder = new TrackedEntitiesBuilder())
+            {
+                var defaultPointsToValueGenerator = new DefaultPointsToValueGenerator(trackedEntitiesBuilder);
+                var analysisDomain = new PointsToAnalysisDomain(defaultPointsToValueGenerator);
+                var operationVisitor = new PointsToDataFlowOperationVisitor(trackedEntitiesBuilder, defaultPointsToValueGenerator, analysisDomain, analysisContext);
+                var pointsToAnalysis = new PointsToAnalysis(analysisDomain, operationVisitor);
+                return pointsToAnalysis.GetOrComputeResultCore(analysisContext, cacheResult: true);
+            }
         }
+
+        public static bool ShouldBeTracked(ITypeSymbol typeSymbol) => typeSymbol.IsReferenceTypeOrNullableValueType();
+
+        public static bool ShouldBeTracked(AnalysisEntity analysisEntity)
+            => ShouldBeTracked(analysisEntity.Type) || analysisEntity.IsLValueFlowCaptureEntity || analysisEntity.IsThisOrMeInstance;
 
         [Conditional("DEBUG")]
         public static void AssertValidPointsToAnalysisData(PointsToAnalysisData data)
@@ -66,7 +94,7 @@ namespace Microsoft.CodeAnalysis.FlowAnalysis.DataFlow.PointsToAnalysis
 
         internal override PointsToAnalysisResult ToResult(PointsToAnalysisContext analysisContext, PointsToAnalysisResult dataFlowAnalysisResult)
             => dataFlowAnalysisResult;
-        internal override PointsToBlockAnalysisResult ToBlockResult(BasicBlock basicBlock, DataFlowAnalysisInfo<PointsToAnalysisData> blockAnalysisData)
-            => new PointsToBlockAnalysisResult(basicBlock, blockAnalysisData, ((PointsToAnalysisDomain)AnalysisDomain).DefaultPointsToValueGenerator.GetDefaultPointsToValueMap());
+        internal override PointsToBlockAnalysisResult ToBlockResult(BasicBlock basicBlock, PointsToAnalysisData blockAnalysisData)
+            => new PointsToBlockAnalysisResult(basicBlock, blockAnalysisData);
     }
 }

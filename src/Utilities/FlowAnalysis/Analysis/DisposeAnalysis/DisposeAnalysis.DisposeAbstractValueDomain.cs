@@ -1,11 +1,10 @@
 ﻿// Copyright (c) Microsoft.  All Rights Reserved.  Licensed under the Apache License, Version 2.0.  See License.txt in the project root for license information.
 
-using System.Collections.Generic;
 using System.Diagnostics;
 
 namespace Microsoft.CodeAnalysis.FlowAnalysis.DataFlow.DisposeAnalysis
 {
-    using DisposeAnalysisData = IDictionary<AbstractLocation, DisposeAbstractValue>;
+    using DisposeAnalysisData = DictionaryAnalysisData<AbstractLocation, DisposeAbstractValue>;
 
     internal partial class DisposeAnalysis : ForwardDataFlowAnalysis<DisposeAnalysisData, DisposeAnalysisContext, DisposeAnalysisResult, DisposeBlockAnalysisResult, DisposeAbstractValue>
     {
@@ -23,7 +22,7 @@ namespace Microsoft.CodeAnalysis.FlowAnalysis.DataFlow.DisposeAnalysis
             
             public override DisposeAbstractValue UnknownOrMayBeValue => DisposeAbstractValue.Unknown;
 
-            public override int Compare(DisposeAbstractValue oldValue, DisposeAbstractValue newValue)
+            public override int Compare(DisposeAbstractValue oldValue, DisposeAbstractValue newValue, bool assertMonotonicity)
             {
                 Debug.Assert(oldValue != null);
                 Debug.Assert(newValue != null);
@@ -43,7 +42,7 @@ namespace Microsoft.CodeAnalysis.FlowAnalysis.DataFlow.DisposeAnalysis
                 }
                 else
                 {
-                    Debug.Fail("Non-monotonic Merge function");
+                    FireNonMonotonicAssertIfNeeded(assertMonotonicity);
                     return 1;
                 }
             }

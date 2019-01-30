@@ -1,6 +1,7 @@
 ﻿// Copyright (c) Microsoft.  All Rights Reserved.  Licensed under the Apache License, Version 2.0.  See License.txt in the project root for license information.
 
 using System;
+using System.Collections.Generic;
 using System.Collections.Immutable;
 using System.Diagnostics;
 using Microsoft.CodeAnalysis.FlowAnalysis.DataFlow.CopyAnalysis;
@@ -22,9 +23,14 @@ namespace Microsoft.CodeAnalysis.FlowAnalysis.DataFlow.ValueContentAnalysis
             {
             }
 
-            protected override void AddTrackedEntities(ImmutableArray<AnalysisEntity>.Builder builder) => builder.AddRange(CurrentAnalysisData.CoreAnalysisData.Keys);
+            protected override void AddTrackedEntities(PooledHashSet<AnalysisEntity> builder, bool forInterproceduralAnalysis)
+                => CurrentAnalysisData.AddTrackedEntities(builder);
 
-            protected override void SetAbstractValue(AnalysisEntity analysisEntity, ValueContentAbstractValue value) => SetAbstractValue(CurrentAnalysisData, analysisEntity, value);
+            protected override void ResetAbstractValue(AnalysisEntity analysisEntity)
+                => SetAbstractValue(analysisEntity, ValueDomain.UnknownOrMayBeValue);
+
+            protected override void SetAbstractValue(AnalysisEntity analysisEntity, ValueContentAbstractValue value)
+                => SetAbstractValue(CurrentAnalysisData, analysisEntity, value);
 
             private static void SetAbstractValue(ValueContentAnalysisData analysisData, AnalysisEntity analysisEntity, ValueContentAbstractValue value)
             {
@@ -125,12 +131,16 @@ namespace Microsoft.CodeAnalysis.FlowAnalysis.DataFlow.ValueContentAnalysis
                 => ValueContentAnalysisDomain.Instance.MergeAnalysisDataForBackEdge(value1, value2);
             protected override ValueContentAnalysisData GetClonedAnalysisData(ValueContentAnalysisData analysisData)
                 => (ValueContentAnalysisData)analysisData.Clone();
-            protected override ValueContentAnalysisData GetEmptyAnalysisData()
+            public override ValueContentAnalysisData GetEmptyAnalysisData()
                 => new ValueContentAnalysisData();
-            protected override ValueContentAnalysisData GetAnalysisDataAtBlockEnd(ValueContentAnalysisResult analysisResult, BasicBlock block)
-                => new ValueContentAnalysisData(analysisResult[block].OutputData);
+            protected override ValueContentAnalysisData GetExitBlockOutputData(ValueContentAnalysisResult analysisResult)
+                => new ValueContentAnalysisData(analysisResult.ExitBlockOutput.Data);
             protected override bool Equals(ValueContentAnalysisData value1, ValueContentAnalysisData value2)
                 => value1.Equals(value2);
+            protected override void ApplyInterproceduralAnalysisResultCore(ValueContentAnalysisData resultData)
+                => ApplyInterproceduralAnalysisResultHelper(resultData.CoreAnalysisData);
+            protected override ValueContentAnalysisData GetTrimmedCurrentAnalysisData(IEnumerable<AnalysisEntity> withEntities)
+                => GetTrimmedCurrentAnalysisDataHelper(withEntities, CurrentAnalysisData.CoreAnalysisData, SetAbstractValue);
 
             #region Visitor methods
             public override ValueContentAbstractValue DefaultVisit(IOperation operation, object argument)

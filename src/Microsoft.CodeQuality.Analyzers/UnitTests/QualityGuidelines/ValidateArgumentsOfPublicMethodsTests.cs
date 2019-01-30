@@ -1805,6 +1805,59 @@ End Class
             GetBasicResultAt(9, 12, "Sub Test.M1(c1 As C, c2 As C)", "c2"));
         }
 
+        [Theory]
+        [InlineData(@"dotnet_code_quality.interprocedural_analysis_kind = None")]
+        [InlineData(@"dotnet_code_quality.max_interprocedural_method_call_chain = 0")]
+        [InlineData(@"dotnet_code_quality.interprocedural_analysis_kind = ContextSensitive
+                      dotnet_code_quality.max_interprocedural_method_call_chain = 0")]
+        public void HazardousUsageInInvokedMethod_PrivateMethod_EditorConfig_NoInterproceduralAnalysis_NoDiagnostic(string editorConfigText)
+        {
+            VerifyCSharp(@"
+public class C
+{
+    public int X;
+}
+
+public class Test
+{
+    public void M1(C c1, C c2)
+    {
+        M2(c1); // No diagnostic
+        M3(c2); // Diagnostic
+    }
+
+    private static void M2(C c)
+    {
+    }
+
+    private static void M3(C c)
+    {
+        var x = c.X;
+    }
+}
+", GetEditorConfigAdditionalFile(editorConfigText));
+
+            VerifyBasic(@"
+Public Class C
+    Public X As Integer
+End Class
+
+Public Class Test
+    Public Sub M1(c1 As C, c2 As C)
+        M2(c1) ' No diagnostic
+        M3(c2) ' Diagnostic
+    End Sub
+
+    Private Shared Sub M2(c As C)
+    End Sub
+
+    Private Shared Sub M3(c As C)
+        Dim x = c.X
+    End Sub
+End Class
+", GetEditorConfigAdditionalFile(editorConfigText));
+        }
+
         [Fact, WorkItem(1707, "https://github.com/dotnet/roslyn-analyzers/issues/1707")]
         public void HazardousUsageInInvokedMethod_PrivateMethod_Generic_Diagnostic()
         {
@@ -4241,6 +4294,808 @@ public class C
             var currentNode = current.node;
             var currentLeading = current.leading;
             var currentTrailing = current.trailing;
+        }
+    }
+}
+");
+        }
+
+        [Fact]
+        public void NonMonotonicMergeAssert_DefaultEntityEntryMissing()
+        {
+            VerifyCSharp(@"
+using System.Collections.Generic;
+
+public class C
+{
+    private IEnumerable<Reference> References { get; }
+    private string BaseDirectory { get; }
+    public IEnumerable<BaseResolvedReference> ResolveReferences(Loader loader)
+    {
+        foreach (var reference in References)
+        {
+            yield return ResolveReference(reference, loader)
+                ?? (BaseResolvedReference)new UnresolvedReference(reference.FilePath);
+        }
+    }
+
+    private ResolvedReference ResolveReference(Reference reference, Loader loader)
+    {
+        string resolvedPath = FileUtilities.ResolveRelativePath(reference.FilePath);
+        if (resolvedPath != null)
+        {
+            resolvedPath = FileUtilities.TryNormalizeAbsolutePath(resolvedPath);
+        }
+
+        if (resolvedPath != null)
+        {
+            return new ResolvedReference(resolvedPath, loader);
+        }
+
+        return null;
+    }
+}
+
+public abstract class BaseResolvedReference { }
+public class ResolvedReference : BaseResolvedReference {  public ResolvedReference(string path, Loader loader) { } }
+public class UnresolvedReference : BaseResolvedReference { public UnresolvedReference(string path) { } }
+public class Reference { public string FilePath { get; } }
+public class Loader { }
+internal static class FileUtilities
+{
+    public static string ResolveRelativePath(string path) => path.Length > 0 ? path : ""newPath"";
+    public static string TryNormalizeAbsolutePath(string path) => ""newPath"";
+}
+");
+        }
+
+        [Fact]
+        public void NonMonotonicMergeAssert_DefaultEntityEntryMissing_02()
+        {
+            VerifyCSharp(@"
+using System;
+using System.Collections.Generic;
+
+public class C
+{
+    private GreenNode[] _nodes;
+    private int _count;
+
+    public void Add(IEnumerable<SyntaxNodeOrToken> nodeOrTokens)
+    {
+        foreach (var n in nodeOrTokens)
+        {
+            this.Add(n);
+        }
+    }
+
+    private void Add(SyntaxNodeOrToken item)
+    {
+        var x = item.Token;
+    }
+}
+
+public struct SyntaxNodeOrToken
+{
+    internal GreenNode Token { get; }
+}
+
+public class GreenNode { }
+",
+            // Test0.cs(12,27): warning CA1062: In externally visible method 'void C.Add(IEnumerable<SyntaxNodeOrToken> nodeOrTokens)', validate parameter 'nodeOrTokens' is non-null before using it. If appropriate, throw an ArgumentNullException when the argument is null or add a Code Contract precondition asserting non-null argument.
+            GetCSharpResultAt(12, 27, "void C.Add(IEnumerable<SyntaxNodeOrToken> nodeOrTokens)", "nodeOrTokens"));
+        }
+
+        [Fact]
+        public void ComparisonOfValueTypeCastToObjectWithNull()
+        {
+            VerifyCSharp(@"
+public class C
+{
+    public void M(object p)
+    {
+        var s = new S();
+        var o = (object)s;
+        var y = o != null ? o.GetType().ToString() : p.ToString();
+    }
+}
+
+public struct S { }",
+            // Test0.cs(8,54): warning CA1062: In externally visible method 'void C.M(object p)', validate parameter 'p' is non-null before using it. If appropriate, throw an ArgumentNullException when the argument is null or add a Code Contract precondition asserting non-null argument.
+            GetCSharpResultAt(8, 54, "void C.M(object p)", "p"));
+        }
+
+        [Fact]
+        public void InvalidParentInstanceAssertForAnalysisEntity()
+        {
+            VerifyCSharp(@"
+using System.Threading;
+
+public struct S
+{
+    private readonly CancellationToken _cancellationToken;
+    public void M(object obj, C c)
+    {
+        c?.M2(obj, _cancellationToken);
+    }
+}
+
+public class C
+{
+    public void M2(object obj, CancellationToken cancellationToken)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        var x = obj.ToString();
+    }
+}",
+            // Test0.cs(18,17): warning CA1062: In externally visible method 'void C.M2(object obj, CancellationToken cancellationToken)', validate parameter 'obj' is non-null before using it. If appropriate, throw an ArgumentNullException when the argument is null or add a Code Contract precondition asserting non-null argument.
+            GetCSharpResultAt(18, 17, "void C.M2(object obj, CancellationToken cancellationToken)", "obj"));
+        }
+
+        [Fact]
+        public void InvalidParentInstanceAssertForAnalysisEntity_02()
+        {
+            VerifyCSharp(@"
+using System.Threading;
+
+public struct S
+{
+    private readonly CancellationToken _cancellationToken;
+    public void M(object obj)
+    {
+        C.M2(obj, _cancellationToken);
+    }
+}
+
+internal static class C
+{
+    public static void M2(object obj, CancellationToken cancellationToken)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        var x = obj.ToString();
+    }
+}",
+            // Test0.cs(9,14): warning CA1062: In externally visible method 'void S.M(object obj)', validate parameter 'obj' is non-null before using it. If appropriate, throw an ArgumentNullException when the argument is null or add a Code Contract precondition asserting non-null argument.
+            GetCSharpResultAt(9, 14, "void S.M(object obj)", "obj"));
+        }
+
+        [Fact]
+        public void IndexedEntityInstanceLocationMergeAssert()
+        {
+            VerifyCSharp(@"
+using System.Collections.Generic;
+using System.Threading;
+
+public class C
+{
+    public void M(string id, List<object> containers, int index, bool flag)
+    {
+        M2(id, containers, index, flag);
+    }
+
+    private void M2(string id, List<object> containers, int index, bool flag)
+    {
+        M3(id, containers, index, flag);
+    }
+
+    private void M3(string id, List<object> containers, int index, bool flag)
+    {
+        for (int i = 0, n = containers.Count; i < n; i++)
+        {
+            if (flag)
+            {
+                index++;
+                var returnType = ParseTypeSymbol(id);
+
+                if (returnType != null)
+                {
+                }
+            }
+        }
+    }
+
+    private object ParseTypeSymbol(string id)
+    {
+        var results = Allocate();
+        try
+        {
+            M3(results);
+            if (results.Count == 0)
+            {
+                return null;
+            }
+            else
+            {
+                return results[0];
+            }
+        }
+        finally
+        {
+            Free(results);
+        }
+    }
+
+    private void M3(List<object> results)
+    {
+        results.AddRange(new object[] { 1, 2 });
+    }
+
+    private struct Element
+    {
+        internal List<object> Value;
+    }
+
+    internal delegate List<object> Factory();
+    private readonly Factory _factory;
+
+    private List<object> _firstItem;
+    private readonly Element[] _items;
+
+    private List<object> Allocate()
+    {
+        var inst = _firstItem;
+        if (inst == null || inst != Interlocked.CompareExchange(ref _firstItem, null, inst))
+        {
+            inst = AllocateSlow();
+        }
+
+        return inst;
+    }
+
+    private List<object> AllocateSlow()
+    {
+        var items = _items;
+
+        for (int i = 0; i < items.Length; i++)
+        {
+            List<object> inst = items[i].Value;
+            if (inst != null)
+            {
+                if (inst == Interlocked.CompareExchange(ref items[i].Value, null, inst))
+                {
+                    return inst;
+                }
+            }
+        }
+
+        return CreateInstance();
+    }
+
+    private List<object> CreateInstance()
+    {
+        var inst = _factory();
+        return inst;
+    }
+
+    private static void Free(List<object> results) { }
+}");
+        }
+
+        [Fact]
+        public void CopyValueMergeAssert()
+        {
+            VerifyCSharp(@"
+public class C
+{
+    public void M(object obj, ref int index)
+    {
+        var startIndex = index;
+        var endIndex = index;
+
+        for (int i = 0; i < 10; i++)
+        {
+            for (int j = 0; j < 10; j++)
+            {
+                index = startIndex;
+
+                if (i > j)
+                {
+                    endIndex = index;
+                }
+            }
+
+            index = endIndex;
+        }
+    }
+}");
+        }
+
+        [Fact]
+        public void CopyValueInvalidResetDataAssert()
+        {
+            VerifyCSharp(@"
+using System;
+
+public class C
+{
+    public Func<bool> Predicate { get; }
+
+    public void M(object o)
+    {
+        M2(this, Predicate);
+    }
+
+    private static void M2(C c, Func<bool> predicate)
+    {
+        M3(c, predicate);
+    }
+
+    private static void M3(C c, Func<bool> predicate)
+    {
+        M4(c, predicate);
+    }
+
+    private static void M4(C c, Func<bool> predicate)
+    {
+        for (int i = 0; i < 10; i++)
+        {
+            if (predicate())
+            {
+                return;
+            }
+        }
+    }
+}");
+        }
+
+        [Fact]
+        public void CopyValueAddressSharedEntityAssert()
+        {
+            VerifyCSharp(@"
+using System;
+
+public class C
+{
+    public void M(object o)
+    {
+        int xLocal;
+        M2(o, out xLocal);
+    }
+
+    private void M2(object o, out int xParam)
+    {
+        xParam = 0;
+        var x = o.ToString();
+    }
+}",
+            // Test0.cs(9,12): warning CA1062: In externally visible method 'void C.M(object o)', validate parameter 'o' is non-null before using it. If appropriate, throw an ArgumentNullException when the argument is null or add a Code Contract precondition asserting non-null argument.
+            GetCSharpResultAt(9, 12, "void C.M(object o)", "o"));
+        }
+
+        [Fact]
+        public void CopyValueAddressSharedEntityAssert_RecursiveInvocations()
+        {
+            VerifyCSharp(@"
+using System;
+
+public class C
+{
+    public void M(object o, int param)
+    {
+        int xLocal;
+        int param2 = param;
+        M2(o, out xLocal, ref param2);
+    }
+
+    private void M2(object o, out int xParam, ref int param2)
+    {
+        xParam = 0;
+        if (param2 < 10)
+        {
+            param2++;
+            M2(o, out xParam, ref param2);
+        }
+
+        var x = o.ToString();
+    }
+}",
+            // Test0.cs(10,12): warning CA1062: In externally visible method 'void C.M(object o, int param)', validate parameter 'o' is non-null before using it. If appropriate, throw an ArgumentNullException when the argument is null or add a Code Contract precondition asserting non-null argument.
+            GetCSharpResultAt(10, 12, "void C.M(object o, int param)", "o"));
+        }
+
+        [Fact]
+        public void CopyValueTrackingEntityWithUnknownInstanceLocationAssert()
+        {
+            VerifyCSharp(@"
+using System;
+using System.Collections.Generic;
+
+public struct S { }
+public class D
+{
+    public S S;
+}
+
+public class C
+{
+    public D D;
+    private List<C> list;
+
+    public void M(object o)
+    {
+        foreach (C c in list)
+        {
+            LocalFunction(ref c.D);
+        }
+
+        return;
+
+        void LocalFunction(ref D d)
+        {
+            LocalFunction2(ref d.S);
+        }
+
+        void LocalFunction2(ref S s)
+        {
+        }
+    }
+}");
+        }
+
+        [Fact]
+        public void RecursiveLocalFunctionInvocation()
+        {
+            VerifyCSharp(@"
+using System;
+using System.Collections.Generic;
+
+public class C
+{
+    public int Field;
+    public object M(C c)
+    {
+        c = LocalFunction(c);
+        return c;
+
+        C LocalFunction(C c2)
+        {
+            if (c2.Field > 0)
+            {
+                c2 = LocalFunction(new C());
+            }
+
+            return c2;
+        }
+    }
+}");
+        }
+
+        [Fact]
+        public void MultiChainedLocalFunctionInvocations()
+        {
+            VerifyCSharp(@"
+using System;
+using System.Collections.Generic;
+
+public class C
+{
+    public int Field;
+    public object M(C c)
+    {
+        c = LocalFunction1(c);
+        return c;
+
+        C LocalFunction1(C c2)
+        {
+            return LocalFunction2(c2);
+        }
+
+        C LocalFunction2(C c2)
+        {
+            return LocalFunction3(c2);
+        }
+
+        C LocalFunction3(C c2)
+        {
+            if (c2.Field > 0)
+            {
+                c2 = LocalFunction3(new C());
+            }
+
+            return c2;
+        }
+    }
+}");
+        }
+
+        [Fact]
+        public void MultiChainedLambdaInvocations()
+        {
+            VerifyCSharp(@"
+using System;
+
+public class C
+{
+    public object M(C c)
+    {
+        Func<C, C> lambda1 = (C c2) =>
+        {
+            return c2;
+        };
+
+        Func<C, C> lambda2 = (C c2) =>
+        {
+            return lambda1(c2);
+        };
+
+        Func<C, C> lambda3 = (C c2) =>
+        {
+            return lambda2(c2);
+        };
+
+        c = lambda3(c);
+        return c;
+    }
+}");
+        }
+
+        [Fact]
+        public void IsPatterExpression_UndefinedValueAssert()
+        {
+            VerifyCSharp(@"
+using System;
+public class C
+{
+    public void M(C c)
+    {
+        if (c is D d)
+        {
+            M2(d);
+        }
+    }
+
+    private void M2(D d)
+    {
+    }
+}
+
+public class D : C { }
+");
+        }
+
+        [WorkItem(1939, "https://github.com/dotnet/roslyn-analyzers/issues/1939")]
+        [Fact]
+        public void Issue1939()
+        {
+            VerifyCSharp(@"
+using System;
+
+public class Test
+{
+    public void M(bool b, int maxR, int maxC, object o)
+    {
+        Func<int, int, int> l = (r, c) => r * maxC + c;
+        if (!b)
+            l = (r, c) => c * maxR + r;
+        for (int r = 0; r < maxR; r++)
+        {
+            for (int c = 0; c < maxC; c++)
+            {
+                int i = l(r, c);
+            }
+        }
+    }
+}
+");
+        }
+
+        [Fact]
+        public void CopyAnalysisGetTrimmedDataAssert()
+        {
+            VerifyCSharp(@"
+using System;
+
+public class C
+{
+    public int Length { get; set; }
+    public void M(C c)
+    {
+        int length1 = c.Length;
+        M2(c);
+    }
+
+    private void M2(C c)
+    {
+        int length2 = c.Length;
+        Console.WriteLine(length2);
+    }
+}",
+            // Test0.cs(9,23): warning CA1062: In externally visible method 'void C.M(C c)', validate parameter 'c' is non-null before using it. If appropriate, throw an ArgumentNullException when the argument is null or add a Code Contract precondition asserting non-null argument.
+            GetCSharpResultAt(9, 23, "void C.M(C c)", "c"));
+        }
+
+        [Fact]
+        public void CopyAnalysisGetTrimmedDataAssert_02()
+        {
+            VerifyCSharp(@"
+using System;
+using System.IO;
+using System.Text;
+
+public class C
+{
+    public static C M(Stream stream)
+    {
+        var x = M2(stream);
+        if (x >= 1000)
+        {
+            return M1(stream);
+        }
+
+        return null;
+    }
+
+    internal static C M1(Stream stream)
+    {
+        long longLength = stream.Length;
+        M2(stream);
+        return null;
+    }
+
+    internal static int M2(Stream stream)
+    {
+        long length = stream.Length;
+        return 0;
+    }
+}
+",
+            // Test0.cs(10,20): warning CA1062: In externally visible method 'C C.M(Stream stream)', validate parameter 'stream' is non-null before using it. If appropriate, throw an ArgumentNullException when the argument is null or add a Code Contract precondition asserting non-null argument.
+            GetCSharpResultAt(10, 20, "C C.M(Stream stream)", "stream"));
+        }
+
+        [Fact]
+        public void CopyAnalysisFlowCaptureReturnValueAssert()
+        {
+            VerifyCSharp(@"
+using System;
+
+public class C
+{
+    public int Length { get; set; }
+    public void M(S s1, S s2, bool flag, object obj)
+    {
+        switch (M2(s1, flag))
+        {
+            case Kind.Kind1:
+                break;
+            default:
+                throw new Exception();
+        }
+
+        switch (M2(s2, flag))
+        {
+            case Kind.Kind2:
+                break;
+            default:
+                throw new Exception();
+        }
+    }
+
+    private static Kind M2(S s, bool flag)
+    {
+        return flag ? s.Kind : default(Kind);
+    }
+}
+
+public struct S
+{
+    public Kind Kind { get; }
+}
+
+public enum Kind
+{
+    Kind1,
+    Kind2
+}");
+        }
+
+        [Fact]
+        public void CopyAnalysisFlowCaptureReturnValueAssert_02()
+        {
+            VerifyCSharp(@"
+using System;
+
+public class C
+{
+    public int Length { get; set; }
+    public void M(S s1, S s2, bool flag, object obj)
+    {
+        switch (M2(s1, flag))
+        {
+            case Kind.Kind1:
+                break;
+            default:
+                throw new Exception();
+        }
+
+        switch (M2(s2, flag))
+        {
+            case Kind.Kind2:
+                break;
+            default:
+                throw new Exception();
+        }
+    }
+
+    private static Kind M2(S s, bool flag)
+    {
+        var x = flag ? s.Kind : default(Kind);
+        return x;
+    }
+}
+
+public struct S
+{
+    public Kind Kind { get; }
+}
+
+public enum Kind
+{
+    Kind1,
+    Kind2
+}");
+        }
+
+        [WorkItem(1943, "https://github.com/dotnet/roslyn-analyzers/issues/1943")]
+        [Fact]
+        public void Issue1943()
+        {
+            VerifyCSharp(@"
+using System.IO;
+using System.Web;
+
+namespace MyComments
+{
+    public interface ISomething
+    {
+        string Action(string s1, string s2, object o1);
+    }
+
+    public class Class
+    {
+        public static ISomething Something;
+        public delegate string MyDelegate(string d, params object[] p);
+        public MyDelegate T;
+
+        public void M(HttpContext httpContext, TextWriter Output, int id, int count, int pendingCount)
+        {
+            var text = """";
+
+            if (id != 0)
+            {
+                var totalCount = count + pendingCount;
+                var totalText = T(""1 count"", ""{0} counts"", totalCount);
+                if (totalCount == 0)
+                {
+                    text += totalText.ToString();
+                }
+                else
+                {
+                    text +=
+                        Something.Action(
+                            totalText.ToString(),
+                            ""Details"",
+                            new
+                            {
+                                id = id,
+                                returnUrl = httpContext.Request.Url
+                            });
+                }
+
+                if (pendingCount > 0)
+                {
+                    text += "" "" + Something.Action(
+                        T(""({0} pending)"", pendingCount).ToString(),
+                        ""Details"",
+                        new
+                        {
+                            id = id,
+                            returnUrl = httpContext.Request.Url
+                        });
+                }
+            }
+
+            Output.Write(text);
         }
     }
 }

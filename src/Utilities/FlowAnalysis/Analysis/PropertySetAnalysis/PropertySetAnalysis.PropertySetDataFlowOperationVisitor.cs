@@ -12,7 +12,7 @@ using Microsoft.CodeAnalysis.Operations;
 
 namespace Analyzer.Utilities.FlowAnalysis.Analysis.PropertySetAnalysis
 {
-    using PropertySetAnalysisData = IDictionary<AbstractLocation, PropertySetAbstractValue>;
+    using PropertySetAnalysisData = DictionaryAnalysisData<AbstractLocation, PropertySetAbstractValue>;
 
     internal partial class PropertySetAnalysis
     {
@@ -22,7 +22,6 @@ namespace Analyzer.Utilities.FlowAnalysis.Analysis.PropertySetAnalysis
         private sealed class PropertySetDataFlowOperationVisitor :
             AbstractLocationDataFlowOperationVisitor<PropertySetAnalysisData, PropertySetAnalysisContext, PropertySetAnalysisResult, PropertySetAbstractValue>
         {
-            private const int MaxInterproceduralCallChain = 1;
             private readonly ImmutableDictionary<(Location Location, IMethodSymbol Method), PropertySetAbstractValue>.Builder _hazardousUsageBuilder;
             private INamedTypeSymbol DeserializerTypeSymbol;
 
@@ -49,9 +48,6 @@ namespace Analyzer.Utilities.FlowAnalysis.Analysis.PropertySetAnalysis
                 }
             }
 
-            // We only want to track method calls one level down.
-            protected override int GetAllowedInterproceduralCallChain() => MaxInterproceduralCallChain;
-
             protected override PropertySetAbstractValue GetAbstractDefaultValue(ITypeSymbol type) => ValueDomain.Bottom;
 
             protected override bool HasAnyAbstractValue(PropertySetAnalysisData data) => data.Count > 0;
@@ -76,10 +72,10 @@ namespace Analyzer.Utilities.FlowAnalysis.Analysis.PropertySetAnalysis
                 => BinaryFormatterAnalysisDomainInstance.Merge(value1, value2);
             protected override PropertySetAnalysisData GetClonedAnalysisData(PropertySetAnalysisData analysisData)
                 => GetClonedAnalysisDataHelper(analysisData);
-            protected override PropertySetAnalysisData GetEmptyAnalysisData()
+            public override PropertySetAnalysisData GetEmptyAnalysisData()
                 => GetEmptyAnalysisDataHelper();
-            protected override PropertySetAnalysisData GetAnalysisDataAtBlockEnd(PropertySetAnalysisResult analysisResult, BasicBlock block)
-                => GetClonedAnalysisDataHelper(analysisResult[block].OutputData);
+            protected override PropertySetAnalysisData GetExitBlockOutputData(PropertySetAnalysisResult analysisResult)
+                => GetClonedAnalysisDataHelper(analysisResult.ExitBlockOutput.Data);
             protected override bool Equals(PropertySetAnalysisData value1, PropertySetAnalysisData value2)
                 => EqualsHelper(value1, value2);
 

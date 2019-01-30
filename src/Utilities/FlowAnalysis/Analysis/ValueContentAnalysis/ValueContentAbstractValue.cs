@@ -10,6 +10,8 @@ using Analyzer.Utilities;
 using Analyzer.Utilities.Extensions;
 using Microsoft.CodeAnalysis.Operations;
 
+#pragma warning disable CA1067 // Override Object.Equals(object) when implementing IEquatable<T>
+
 namespace Microsoft.CodeAnalysis.FlowAnalysis.DataFlow.ValueContentAnalysis
 {
     /// <summary>
@@ -130,7 +132,7 @@ namespace Microsoft.CodeAnalysis.FlowAnalysis.DataFlow.ValueContentAnalysis
         /// </summary>
         public ImmutableHashSet<object> LiteralValues { get; }
 
-        protected override void ComputeHashCodeParts(ImmutableArray<int>.Builder builder)
+        protected override void ComputeHashCodeParts(ArrayBuilder<int> builder)
         {
             builder.Add(HashUtilities.Combine(LiteralValues));
             builder.Add(NonLiteralState.GetHashCode());
@@ -147,7 +149,7 @@ namespace Microsoft.CodeAnalysis.FlowAnalysis.DataFlow.ValueContentAnalysis
                 throw new ArgumentNullException(nameof(otherState));
             }
 
-            ImmutableHashSet<object> mergedLiteralValues = LiteralValues.Union(otherState.LiteralValues);
+            ImmutableHashSet<object> mergedLiteralValues = LiteralValues.AddRange(otherState.LiteralValues);
             ValueContainsNonLiteralState mergedNonLiteralState = Merge(NonLiteralState, otherState.NonLiteralState);
             return Create(mergedLiteralValues, mergedNonLiteralState);
         }
@@ -206,7 +208,7 @@ namespace Microsoft.CodeAnalysis.FlowAnalysis.DataFlow.ValueContentAnalysis
             }
 
             // Merge Literals
-            var builder = ImmutableHashSet.CreateBuilder<object>();
+            var builder = PooledHashSet<object>.GetInstance();
             foreach (var leftLiteral in LiteralValues)
             {
                 foreach (var rightLiteral in otherState.LiteralValues)
@@ -220,7 +222,7 @@ namespace Microsoft.CodeAnalysis.FlowAnalysis.DataFlow.ValueContentAnalysis
                 }
             }
 
-            ImmutableHashSet<object> mergedLiteralValues = builder.ToImmutable();
+            ImmutableHashSet<object> mergedLiteralValues = builder.ToImmutableAndFree();
             ValueContainsNonLiteralState mergedNonLiteralState = Merge(NonLiteralState, otherState.NonLiteralState);
 
             return Create(mergedLiteralValues, mergedNonLiteralState);

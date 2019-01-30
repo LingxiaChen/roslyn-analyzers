@@ -6,7 +6,7 @@ using System.Diagnostics;
 
 namespace Microsoft.CodeAnalysis.FlowAnalysis.DataFlow.PointsToAnalysis
 {
-    using CorePointsToAnalysisData = IDictionary<AnalysisEntity, PointsToAbstractValue>;
+    using CorePointsToAnalysisData = DictionaryAnalysisData<AnalysisEntity, PointsToAbstractValue>;
 
     /// <summary>
     /// Aggregated PointsTo analysis data tracked by <see cref="PointsToAnalysis"/>.
@@ -19,7 +19,7 @@ namespace Microsoft.CodeAnalysis.FlowAnalysis.DataFlow.PointsToAnalysis
         {
         }
 
-        public PointsToAnalysisData(CorePointsToAnalysisData fromData)
+        public PointsToAnalysisData(IDictionary<AnalysisEntity, PointsToAbstractValue> fromData)
             : base(fromData)
         {
             AssertValidPointsToAnalysisData(fromData);
@@ -66,17 +66,7 @@ namespace Microsoft.CodeAnalysis.FlowAnalysis.DataFlow.PointsToAnalysis
 
         public override void SetAbstractValue(AnalysisEntity key, PointsToAbstractValue value)
         {
-            throw new NotImplementedException($"Use the supported overload of {nameof(SetAbstractValue)}");
-        }
-
-        public void SetAbstractValue(
-            AnalysisEntity key,
-            PointsToAbstractValue value,
-            Func<AnalysisEntity, bool> isLValueFlowCaptureEntity)
-        {
-            Debug.Assert(value.Kind != PointsToAbstractValueKind.Undefined);
-            Debug.Assert(!isLValueFlowCaptureEntity(key) || value.Kind == PointsToAbstractValueKind.KnownLValueCaptures);
-
+            AssertValidPointsToAnalysisKeyValuePair(key, value);
             base.SetAbstractValue(key, value);
         }
 
@@ -87,6 +77,23 @@ namespace Microsoft.CodeAnalysis.FlowAnalysis.DataFlow.PointsToAnalysis
         }
 
         [Conditional("DEBUG")]
+        public void AssertNoFlowCaptureEntitiesTracked()
+        {
+            AssertNoFlowCaptureEntitiesTracked(CoreAnalysisData);
+            AssertValidPredicatedAnalysisData(map => AssertNoFlowCaptureEntitiesTracked(map));
+
+        }
+
+        [Conditional("DEBUG")]
+        private static void AssertNoFlowCaptureEntitiesTracked(CorePointsToAnalysisData map)
+        {
+            foreach (var key in map.Keys)
+            {
+                Debug.Assert(key.CaptureIdOpt == null);
+            }
+        }
+
+        [Conditional("DEBUG")]
         public void AssertValidPointsToAnalysisData()
         {
             AssertValidPointsToAnalysisData(CoreAnalysisData);
@@ -94,12 +101,27 @@ namespace Microsoft.CodeAnalysis.FlowAnalysis.DataFlow.PointsToAnalysis
         }
 
         [Conditional("DEBUG")]
-        public static void AssertValidPointsToAnalysisData(CorePointsToAnalysisData map)
+        public static void AssertValidPointsToAnalysisData(IDictionary<AnalysisEntity, PointsToAbstractValue> map)
         {
-            foreach (var value in map.Values)
+            if (map is CorePointsToAnalysisData corePointsToAnalysisData)
             {
-                Debug.Assert(value.Kind != PointsToAbstractValueKind.Undefined);
+                Debug.Assert(!corePointsToAnalysisData.IsDisposed);
             }
+
+            foreach (var kvp in map)
+            {
+                AssertValidPointsToAnalysisKeyValuePair(kvp.Key, kvp.Value);
+            }
+        }
+
+        [Conditional("DEBUG")]
+        public static void AssertValidPointsToAnalysisKeyValuePair(
+            AnalysisEntity key,
+            PointsToAbstractValue value)
+        {
+            Debug.Assert(value.Kind != PointsToAbstractValueKind.Undefined);
+            Debug.Assert(!key.IsLValueFlowCaptureEntity || value.Kind == PointsToAbstractValueKind.KnownLValueCaptures);
+            Debug.Assert(PointsToAnalysis.ShouldBeTracked(key));
         }
     }
 }

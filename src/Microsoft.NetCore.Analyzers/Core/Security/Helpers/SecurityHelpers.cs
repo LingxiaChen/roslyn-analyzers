@@ -3,6 +3,8 @@ using System.Collections.Immutable;
 using Analyzer.Utilities;
 using Microsoft.CodeAnalysis;
 
+#pragma warning disable CA1054 // Uri parameters should not be strings
+
 namespace Microsoft.NetCore.Analyzers.Security.Helpers
 {
     internal static class SecurityHelpers
@@ -46,6 +48,15 @@ namespace Microsoft.NetCore.Analyzers.Security.Helpers
                 "DeserializeMethodResponse",
                 "UnsafeDeserialize",
                 "UnsafeDeserializeMethodResponse");
+
+        /// <summary>
+        /// Deserialization methods for <see cref="System.Runtime.Serialization.NetDataContractSerializer"/>.
+        /// </summary>
+        public static readonly ImmutableHashSet<string> NetDataContractSerializerDeserializationMethods =
+            ImmutableHashSet.Create(
+                StringComparer.Ordinal,
+                "Deserialize",
+                "ReadObject");
 
         /// <summary>
         /// Gets a <see cref="LocalizableResourceString"/> from <see cref="MicrosoftNetCoreSecurityResources"/>.

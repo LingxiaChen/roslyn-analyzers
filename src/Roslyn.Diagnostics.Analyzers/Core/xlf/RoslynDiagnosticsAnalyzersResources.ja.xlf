@@ -2,6 +2,36 @@
 <xliff xmlns="urn:oasis:names:tc:xliff:document:1.2" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" version="1.2" xsi:schemaLocation="urn:oasis:names:tc:xliff:document:1.2 xliff-core-1.2-transitional.xsd">
   <file datatype="xml" source-language="en" target-language="ja" original="../RoslynDiagnosticsAnalyzersResources.resx">
     <body>
+      <trans-unit id="DuplicateBannedSymbolDescription">
+        <source>The list of banned symbols contains a duplicate.</source>
+        <target state="translated">禁止されているシンボルの一覧に、重複項目が含まれています。</target>
+        <note />
+      </trans-unit>
+      <trans-unit id="DuplicateBannedSymbolMessage">
+        <source>The symbol '{0}' is listed multiple times in the list of banned APIs</source>
+        <target state="translated">シンボル '{0}' が、禁止されている API の一覧に複数回表示されています</target>
+        <note />
+      </trans-unit>
+      <trans-unit id="DuplicateBannedSymbolTitle">
+        <source>The list of banned symbols contains a duplicate</source>
+        <target state="translated">禁止されているシンボルの一覧に重複項目が含まれています</target>
+        <note />
+      </trans-unit>
+      <trans-unit id="SymbolIsBannedDescription">
+        <source>The symbol has been marked as banned in this project, and an alternate should be used instead.</source>
+        <target state="translated">このシンボルはこのプロジェクトでは禁止のマークが付いています。代わりのものを使用する必要があります。</target>
+        <note />
+      </trans-unit>
+      <trans-unit id="SymbolIsBannedMessage">
+        <source>The symbol '{0}' is banned in this project{1}</source>
+        <target state="translated">シンボル '{0}' はこのプロジェクト {1} では禁止されています</target>
+        <note />
+      </trans-unit>
+      <trans-unit id="SymbolIsBannedTitle">
+        <source>Do not used banned APIs</source>
+        <target state="translated">禁止されている API を使用しない</target>
+        <note />
+      </trans-unit>
       <trans-unit id="UseSpecializedCollectionsEmptyEnumerableTitle">
         <source>Use SpecializedCollections.EmptyEnumerable()</source>
         <target state="translated">SpecializedCollections.EmptyEnumerable() を使用します</target>

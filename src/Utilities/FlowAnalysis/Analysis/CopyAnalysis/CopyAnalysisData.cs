@@ -2,13 +2,12 @@
 
 using System;
 using System.Collections.Generic;
-using System.Collections.Immutable;
 using System.Diagnostics;
 using System.Linq;
 
 namespace Microsoft.CodeAnalysis.FlowAnalysis.DataFlow.CopyAnalysis
 {
-    using CoreCopyAnalysisData = IDictionary<AnalysisEntity, CopyAbstractValue>;
+    using CoreCopyAnalysisData = DictionaryAnalysisData<AnalysisEntity, CopyAbstractValue>;
 
     /// <summary>
     /// Aggregated copy analysis data tracked by <see cref="CopyAnalysis"/>.
@@ -21,19 +20,22 @@ namespace Microsoft.CodeAnalysis.FlowAnalysis.DataFlow.CopyAnalysis
         {
         }
 
-        public CopyAnalysisData(CoreCopyAnalysisData fromData)
+        public CopyAnalysisData(IDictionary<AnalysisEntity, CopyAbstractValue> fromData)
             : base(fromData)
         {
+            AssertValidCopyAnalysisData();
         }
 
         private CopyAnalysisData(CopyAnalysisData fromData)
             : base(fromData)
         {
+            AssertValidCopyAnalysisData();
         }
 
         private CopyAnalysisData(CopyAnalysisData data1, CopyAnalysisData data2, MapAbstractDomain<AnalysisEntity, CopyAbstractValue> coreDataAnalysisDomain)
             : base(data1, data2, coreDataAnalysisDomain)
         {
+            AssertValidCopyAnalysisData();
         }
 
         public override AnalysisEntityBasedPredicateAnalysisData<CopyAbstractValue> Clone() => new CopyAnalysisData(this);
@@ -44,28 +46,42 @@ namespace Microsoft.CodeAnalysis.FlowAnalysis.DataFlow.CopyAnalysis
         public override AnalysisEntityBasedPredicateAnalysisData<CopyAbstractValue> WithMergedData(AnalysisEntityBasedPredicateAnalysisData<CopyAbstractValue> data, MapAbstractDomain<AnalysisEntity, CopyAbstractValue> coreDataAnalysisDomain)
         {
             Debug.Assert(IsReachableBlockData || !data.IsReachableBlockData);
-            var mergedData = new CopyAnalysisData(this, (CopyAnalysisData)data, coreDataAnalysisDomain);
-            mergedData.AssertValidCopyAnalysisData();
-            return mergedData;
+            return new CopyAnalysisData(this, (CopyAnalysisData)data, coreDataAnalysisDomain);
         }
 
-        public void SetAbstactValue(AnalysisEntity key, CopyAbstractValue value, bool isEntityBeingAssigned)
+        /// <summary>
+        /// Updates the the copy values for all entities that are part of the given <paramref name="copyValue"/> set,
+        /// i.e. <see cref="CopyAbstractValue.AnalysisEntities"/>.
+        /// We do not support the <see cref="SetAbstractValue(AnalysisEntity, CopyAbstractValue)"/> overload
+        /// that updates copy value for each individual entity.
+        /// </summary>
+        public void SetAbstactValueForEntities(CopyAbstractValue copyValue, AnalysisEntity entityBeingAssignedOpt)
         {
-            // If we have any predicate data, and we are changing the copy value for an assigment,
-            // we need to drop all the predicate data based on this entity,
-            // i.e. we need to remove all predicated values for this key and
-            // also remove data predicated by the true/false value of this key, if any.
-            if (HasPredicatedData && isEntityBeingAssigned)
+            foreach (var entity in copyValue.AnalysisEntities)
             {
-                RemoveEntries(key);
-            }
+                // If we have any predicate data based on the previous value of this entity,
+                // and we are changing the copy value for an assigment (i.e. entity == entityBeingAssigned),
+                // we need to drop all the predicate data based on this entity.
+                if (entity == entityBeingAssignedOpt && HasPredicatedDataForEntity(entity))
+                {
+                    StopTrackingPredicatedData(entity);
+                }
 
-            CoreAnalysisData[key] = value;
+                // Remove all predicated values for this entity as we are going to set
+                // a new value in CoreAnalysisData below, which is non-predicated.
+                if (HasPredicatedData)
+                {
+                    RemoveEntriesInPredicatedData(entity);
+                }
+
+                // Finally, set the value in the core analysis data.
+                CoreAnalysisData[entity] = copyValue;
+            }
         }
 
         public override void SetAbstractValue(AnalysisEntity key, CopyAbstractValue value)
         {
-            throw new NotSupportedException("Use the other overload of SetAbstactValue");
+            throw new NotSupportedException("Use SetAbstactValueForEntities API");
         }
 
         protected override void RemoveEntryInPredicatedData(AnalysisEntity key, CoreCopyAnalysisData predicatedData)
@@ -162,20 +178,29 @@ namespace Microsoft.CodeAnalysis.FlowAnalysis.DataFlow.CopyAnalysis
 
         public override void Reset(Func<AnalysisEntity, CopyAbstractValue, CopyAbstractValue> getResetValue)
         {
+            this.AssertValidCopyAnalysisData();
             base.Reset(getResetValue);
             this.AssertValidCopyAnalysisData();
         }
 
         [Conditional("DEBUG")]
-        public void AssertValidCopyAnalysisData()
+        public void AssertValidCopyAnalysisData(Func<AnalysisEntity, CopyAbstractValue> tryGetDefaultCopyValueOpt = null, bool initializingParameters = false)
         {
-            AssertValidCopyAnalysisData(CoreAnalysisData);
-            AssertValidPredicatedAnalysisData(map => AssertValidCopyAnalysisData(map));
+            AssertValidCopyAnalysisData(CoreAnalysisData, tryGetDefaultCopyValueOpt, initializingParameters);
+            AssertValidPredicatedAnalysisData(map => AssertValidCopyAnalysisData(map, tryGetDefaultCopyValueOpt, initializingParameters));
         }
 
         [Conditional("DEBUG")]
-        public static void AssertValidCopyAnalysisData(CoreCopyAnalysisData map)
+        public static void AssertValidCopyAnalysisData(
+            IDictionary<AnalysisEntity, CopyAbstractValue> map,
+            Func<AnalysisEntity, CopyAbstractValue> tryGetDefaultCopyValueOpt = null,
+            bool initializingParameters = false)
         {
+            if (map is CoreCopyAnalysisData coreCopyAnalysisData)
+            {
+                Debug.Assert(!coreCopyAnalysisData.IsDisposed);
+            }
+
             foreach (var kvp in map)
             {
                 AssertValidCopyAnalysisEntity(kvp.Key);
@@ -185,13 +210,28 @@ namespace Microsoft.CodeAnalysis.FlowAnalysis.DataFlow.CopyAnalysis
                     AssertValidCopyAnalysisEntity(analysisEntity);
                     Debug.Assert(map[analysisEntity] == kvp.Value);
                 }
+
+                // Validate consistency for all address shared values, if we are not in
+                // the middle of initializing parameter input values with address shared entities.
+                if (!initializingParameters)
+                {
+                    var defaultCopyValueOpt = tryGetDefaultCopyValueOpt?.Invoke(kvp.Key);
+                    if (defaultCopyValueOpt != null)
+                    {
+                        foreach (var defaultCopyValyeEntity in defaultCopyValueOpt.AnalysisEntities)
+                        {
+                            Debug.Assert(kvp.Value.AnalysisEntities.Contains(defaultCopyValyeEntity));
+                            Debug.Assert(map.ContainsKey(defaultCopyValyeEntity));
+                        }
+                    }
+                }
             }
         }
 
         [Conditional("DEBUG")]
         private static void AssertValidCopyAnalysisEntity(AnalysisEntity analysisEntity)
         {
-            Debug.Assert(!analysisEntity.HasUnknownInstanceLocationWithEmptyLocations, "Don't track entities if do not know about it's instance location");
+            Debug.Assert(!analysisEntity.HasUnknownInstanceLocation, "Don't track entities if do not know about it's instance location");
         }
     }
 }

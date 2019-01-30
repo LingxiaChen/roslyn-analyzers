@@ -7,6 +7,8 @@ using Analyzer.Utilities;
 using Microsoft.CodeAnalysis.FlowAnalysis.DataFlow.CopyAnalysis;
 using Microsoft.CodeAnalysis.FlowAnalysis.DataFlow.PointsToAnalysis;
 
+#pragma warning disable CA1067 // Override Object.Equals(object) when implementing IEquatable<T>
+
 namespace Microsoft.CodeAnalysis.FlowAnalysis.DataFlow
 {
     /// <summary>
@@ -27,13 +29,15 @@ namespace Microsoft.CodeAnalysis.FlowAnalysis.DataFlow
         public InterproceduralAnalysisData(
             TAnalysisData initialAnalysisData,
             (AnalysisEntity, PointsToAbstractValue)? invocationInstanceOpt,
+            (AnalysisEntity, PointsToAbstractValue)? thisOrMeInstanceForCallerOpt,
             ImmutableArray<ArgumentInfo<TAbstractAnalysisValue>> arguments,
             ImmutableDictionary<ISymbol, PointsToAbstractValue> capturedVariablesMap,
             ImmutableDictionary<AnalysisEntity, CopyAbstractValue> addressSharedEntities,
             ImmutableStack<IOperation> callStack,
             ImmutableHashSet<TAnalysisContext> methodsBeingAnalyzed,
             Func<IOperation, TAbstractAnalysisValue> getCachedAbstractValueFromCaller,
-            Func<IMethodSymbol, ControlFlowGraph> getInterproceduralControlFlowGraph)
+            Func<IMethodSymbol, ControlFlowGraph> getInterproceduralControlFlowGraph,
+            Func<IOperation, AnalysisEntity> getAnalysisEntityForFlowCapture)
         {
             Debug.Assert(initialAnalysisData != null);
             Debug.Assert(!arguments.IsDefault);
@@ -42,9 +46,11 @@ namespace Microsoft.CodeAnalysis.FlowAnalysis.DataFlow
             Debug.Assert(methodsBeingAnalyzed != null);
             Debug.Assert(getCachedAbstractValueFromCaller != null);
             Debug.Assert(getInterproceduralControlFlowGraph != null);
+            Debug.Assert(getAnalysisEntityForFlowCapture != null);
 
             InitialAnalysisData = initialAnalysisData;
             InvocationInstanceOpt = invocationInstanceOpt;
+            ThisOrMeInstanceForCallerOpt = thisOrMeInstanceForCallerOpt;
             Arguments = arguments;
             CapturedVariablesMap = capturedVariablesMap;
             AddressSharedEntities = addressSharedEntities;
@@ -52,10 +58,12 @@ namespace Microsoft.CodeAnalysis.FlowAnalysis.DataFlow
             MethodsBeingAnalyzed = methodsBeingAnalyzed;
             GetCachedAbstractValueFromCaller = getCachedAbstractValueFromCaller;
             GetInterproceduralControlFlowGraph = getInterproceduralControlFlowGraph;
+            GetAnalysisEntityForFlowCapture = getAnalysisEntityForFlowCapture;
         }
 
         public TAnalysisData InitialAnalysisData { get; }
-        public (AnalysisEntity Instance, PointsToAbstractValue PointsToValue)? InvocationInstanceOpt { get; }
+        public (AnalysisEntity InstanceOpt, PointsToAbstractValue PointsToValue)? InvocationInstanceOpt { get; }
+        public (AnalysisEntity Instance, PointsToAbstractValue PointsToValue)? ThisOrMeInstanceForCallerOpt { get; }
         public ImmutableArray<ArgumentInfo<TAbstractAnalysisValue>> Arguments { get; }
         public ImmutableDictionary<ISymbol, PointsToAbstractValue> CapturedVariablesMap { get; }
         public ImmutableDictionary<AnalysisEntity, CopyAbstractValue> AddressSharedEntities { get; }
@@ -63,22 +71,33 @@ namespace Microsoft.CodeAnalysis.FlowAnalysis.DataFlow
         public ImmutableHashSet<TAnalysisContext> MethodsBeingAnalyzed { get; }
         public Func<IOperation, TAbstractAnalysisValue> GetCachedAbstractValueFromCaller { get; }
         public Func<IMethodSymbol, ControlFlowGraph> GetInterproceduralControlFlowGraph { get; }
+        public Func<IOperation, AnalysisEntity> GetAnalysisEntityForFlowCapture { get; }
 
-        protected override void ComputeHashCodeParts(ImmutableArray<int>.Builder builder)
+        protected override void ComputeHashCodeParts(ArrayBuilder<int> builder)
         {
             builder.Add(InitialAnalysisData.GetHashCodeOrDefault());
-
-            if (InvocationInstanceOpt.HasValue)
-            {
-                builder.Add(InvocationInstanceOpt.Value.Instance.GetHashCode());
-                builder.Add(InvocationInstanceOpt.Value.PointsToValue.GetHashCode());
-            }
-
+            AddHashCodeParts(InvocationInstanceOpt, builder);
+            AddHashCodeParts(ThisOrMeInstanceForCallerOpt, builder);
             builder.Add(HashUtilities.Combine(Arguments));
             builder.Add(HashUtilities.Combine(CapturedVariablesMap));
             builder.Add(HashUtilities.Combine(AddressSharedEntities));
             builder.Add(HashUtilities.Combine(CallStack));
             builder.Add(HashUtilities.Combine(MethodsBeingAnalyzed));
+        }
+
+        private static void AddHashCodeParts(
+            (AnalysisEntity InstanceOpt, PointsToAbstractValue PointsToValue)? instanceAndPointsToValueOpt,
+            ArrayBuilder<int> builder)
+        {
+            if (instanceAndPointsToValueOpt.HasValue)
+            {
+                builder.Add(instanceAndPointsToValueOpt.Value.InstanceOpt.GetHashCodeOrDefault());
+                builder.Add(instanceAndPointsToValueOpt.Value.PointsToValue.GetHashCode());
+            }
+            else
+            {
+                builder.Add(0);
+            }
         }
     }
 }

@@ -1,6 +1,7 @@
 ﻿// Copyright (c) Microsoft.  All Rights Reserved.  Licensed under the Apache License, Version 2.0.  See License.txt in the project root for license information.
 
 using System;
+using System.Collections.Immutable;
 using Microsoft.CodeAnalysis;
 
 namespace Analyzer.Utilities
@@ -49,6 +50,7 @@ namespace Analyzer.Utilities
         public const string SystemWebUIHtmlControlsHtmlSelect = "System.Web.UI.HtmlControls.HtmlSelect";
         public const string SystemWebUIHtmlControlsHtmlTextArea = "System.Web.UI.HtmlControls.HtmlTextArea";
         public const string SystemWebUIHtmlControlsHtmlTitle = "System.Web.UI.HtmlControls.HtmlTitle";
+        public const string SystemWebUIHtmlTextWriter = "System.Web.UI.HtmlTextWriter";
         public const string SystemWebUIIndexedString = "System.Web.UI.IndexedString";
         public const string SystemWebUILiteralControl = "System.Web.UI.LiteralControl";
         public const string SystemWebUIResourceBasedLiteralControl = "System.Web.UI.ResourceBasedLiteralControl";
@@ -123,6 +125,7 @@ namespace Analyzer.Utilities
         public const string SystemWebUIWebControlsWebPartsWebPartMinimizeVerb = "System.Web.UI.WebControls.WebParts.WebPartMinimizeVerb";
         public const string SystemWebUIWebControlsWebPartsWebPartRestoreVerb = "System.Web.UI.WebControls.WebParts.WebPartRestoreVerb";
         public const string SystemWebUIWebControlsWebPartsWebPartVerb = "System.Web.UI.WebControls.WebParts.WebPartVerb";
+        public const string SystemWebUIITextControl = "System.Web.UI.ITextControl";
         public const string SystemCollectionsGenericICollection1 = "System.Collections.Generic.ICollection`1";
         public const string SystemCollectionsGenericIReadOnlyCollection1 = "System.Collections.Generic.IReadOnlyCollection`1";
         public const string SystemRuntimeSerializationFormattersBinaryBinaryFormatter = "System.Runtime.Serialization.Formatters.Binary.BinaryFormatter";
@@ -130,6 +133,24 @@ namespace Analyzer.Utilities
         public const string SystemReflectionAssembly = "System.Reflection.Assembly";
         public const string SystemAppDomain = "System.AppDomain";
         public const string SystemWindowsAssemblyPart = "System.Windows.AssemblyPart";
+        public const string SystemWebUIHtmlControlsHtmlContainerControl = "System.Web.UI.HtmlControls.HtmlContainerControl";
+        public const string SystemWebUIHtmlControlsHtmlTable = "System.Web.UI.HtmlControls.HtmlTable";
+        public const string SystemWebUIHtmlControlsHtmlTableRow = "System.Web.UI.HtmlControls.HtmlTableRow";
+        public const string SystemWebUIWebControlsBaseDataList = "System.Web.UI.WebControls.BaseDataList";
+        public const string SystemWebUIWebControlsCalendar = "System.Web.UI.WebControls.Calendar";
+        public const string SystemWebUIWebControlsRepeatInfo = "System.Web.UI.WebControls.RepeatInfo";
+        public const string SystemWebUIWebControlsTable = "System.Web.UI.WebControls.Table";
+        public const string SystemWebHttpResponse = "System.Web.HttpResponse";
+        public const string SystemWebHttpResponseBase = "System.Web.HttpResponseBase";
+        public const string SystemIODirectory = "System.IO.Directory";
+        public const string SystemIOFile = "System.IO.File";
+        public const string SystemIOFileInfo = "System.IO.FileInfo";
+        public const string SystemSecurityCryptographyCipherMode = "System.Security.Cryptography.CipherMode";
+        public const string SystemNetSecurityRemoteCertificateValidationCallback = "System.Net.Security.RemoteCertificateValidationCallback";
+        public const string SystemDiagnosticsProcess = "System.Diagnostics.Process";
+        public const string SystemDiagnosticsProcessStartInfo = "System.Diagnostics.ProcessStartInfo";
+        public const string SystemTextRegularExpressionsRegex = "System.Text.RegularExpressions.Regex";
+        public const string SystemRuntimeSerializationNetDataContractSerializer = "System.Runtime.Serialization.NetDataContractSerializer";
 
         public static INamedTypeSymbol ICollection(Compilation compilation)
         {
@@ -431,6 +452,21 @@ namespace Analyzer.Utilities
             return compilation.GetSpecialType(SpecialType.System_Object);
         }
 
+        public static INamedTypeSymbol X509Certificate(Compilation compilation)
+        {
+            return compilation.GetTypeByMetadataName("System.Security.Cryptography.X509Certificates.X509Certificate");
+        }
+
+        public static INamedTypeSymbol X509Chain(Compilation compilation)
+        {
+            return compilation.GetTypeByMetadataName("System.Security.Cryptography.X509Certificates.X509Chain");
+        }
+
+        public static INamedTypeSymbol SslPolicyErrors(Compilation compilation)
+        {
+            return compilation.GetTypeByMetadataName("System.Net.Security.SslPolicyErrors");
+        }
+
         public static INamedTypeSymbol Exception(Compilation compilation)
         {
             return compilation.GetTypeByMetadataName(SystemException);
@@ -453,7 +489,7 @@ namespace Analyzer.Utilities
 
         public static INamedTypeSymbol KeyNotFoundException(Compilation compilation)
         {
-            return compilation.GetTypeByMetadataName("System.KeyNotFoundException");
+            return compilation.GetTypeByMetadataName(typeof(System.Collections.Generic.KeyNotFoundException).FullName);
         }
 
         public static INamedTypeSymbol GenericIEqualityComparer(Compilation compilation)
@@ -599,6 +635,51 @@ namespace Analyzer.Utilities
         public static INamedTypeSymbol HttpVerbs(Compilation compilation)
         {
             return compilation.GetTypeByMetadataName("System.Web.Mvc.HttpVerbs");
+        }
+
+        public static INamedTypeSymbol IImmutableDictionary(Compilation compilation)
+        {
+            return compilation.GetTypeByMetadataName("System.Collections.Immutable.IImmutableDictionary`2");
+        }
+
+        public static INamedTypeSymbol IImmutableList(Compilation compilation)
+        {
+            return compilation.GetTypeByMetadataName("System.Collections.Immutable.IImmutableList`1");
+        }
+
+        public static INamedTypeSymbol IImmutableQueue(Compilation compilation)
+        {
+            return compilation.GetTypeByMetadataName("System.Collections.Immutable.IImmutableQueue`1");
+        }
+
+        public static INamedTypeSymbol IImmutableSet(Compilation compilation)
+        {
+            return compilation.GetTypeByMetadataName("System.Collections.Immutable.IImmutableSet`1");
+        }
+
+        public static INamedTypeSymbol IImmutableStack(Compilation compilation)
+        {
+            return compilation.GetTypeByMetadataName("System.Collections.Immutable.IImmutableStack`1");
+        }
+
+        public static ImmutableHashSet<INamedTypeSymbol> IImmutableInterfaces(Compilation compilation)
+        {
+            var builder = ImmutableHashSet.CreateBuilder<INamedTypeSymbol>();
+            AddIfNotNull(IImmutableDictionary(compilation));
+            AddIfNotNull(IImmutableList(compilation));
+            AddIfNotNull(IImmutableQueue(compilation));
+            AddIfNotNull(IImmutableSet(compilation));
+            AddIfNotNull(IImmutableStack(compilation));
+            return builder.ToImmutable();
+
+            // Local functions.
+            void AddIfNotNull(INamedTypeSymbol type)
+            {
+                if (type != null)
+                {
+                    builder.Add(type);
+                }
+            }
         }
 
         #region Test Framework Types

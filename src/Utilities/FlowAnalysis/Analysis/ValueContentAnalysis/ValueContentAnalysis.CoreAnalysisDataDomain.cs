@@ -1,12 +1,11 @@
 ﻿// Copyright (c) Microsoft.  All Rights Reserved.  Licensed under the Apache License, Version 2.0.  See License.txt in the project root for license information.
 
-using System.Collections.Generic;
 using System.Diagnostics;
 using System.Linq;
 
 namespace Microsoft.CodeAnalysis.FlowAnalysis.DataFlow.ValueContentAnalysis
 {
-    using CoreValueContentAnalysisData = IDictionary<AnalysisEntity, ValueContentAbstractValue>;
+    using CoreValueContentAnalysisData = DictionaryAnalysisData<AnalysisEntity, ValueContentAbstractValue>;
     using ValueContentAnalysisResult = DataFlowAnalysisResult<ValueContentBlockAnalysisResult, ValueContentAbstractValue>;
 
     internal partial class ValueContentAnalysis : ForwardDataFlowAnalysis<ValueContentAnalysisData, ValueContentAnalysisContext, ValueContentAnalysisResult, ValueContentBlockAnalysisResult, ValueContentAbstractValue>
@@ -24,6 +23,10 @@ namespace Microsoft.CodeAnalysis.FlowAnalysis.DataFlow.ValueContentAnalysis
 
             protected override ValueContentAbstractValue GetDefaultValue(AnalysisEntity analysisEntity) => ValueContentAbstractValue.MayBeContainsNonLiteralState;
             protected override bool CanSkipNewEntry(AnalysisEntity analysisEntity, ValueContentAbstractValue value) => value.NonLiteralState == ValueContainsNonLiteralState.Maybe;
+            protected override void AssertValidEntryForMergedMap(AnalysisEntity analysisEntity, ValueContentAbstractValue value)
+            {
+                // No validation.
+            }
 
             public CoreValueContentAnalysisData MergeAnalysisDataForBackEdge(CoreValueContentAnalysisData forwardEdgeAnalysisData, CoreValueContentAnalysisData backEdgeAnalysisData)
             {
@@ -32,7 +35,7 @@ namespace Microsoft.CodeAnalysis.FlowAnalysis.DataFlow.ValueContentAnalysis
 
                 // Stop tracking values present in both branches if their is an assignment to different literal values from the back edge.
                 // Clone the input forwardEdgeAnalysisData to ensure we don't overwrite the input dictionary.
-                forwardEdgeAnalysisData = new Dictionary<AnalysisEntity, ValueContentAbstractValue>(forwardEdgeAnalysisData);
+                forwardEdgeAnalysisData = new CoreValueContentAnalysisData(forwardEdgeAnalysisData);
                 var keysInMap1 = forwardEdgeAnalysisData.Keys.ToList();
                 foreach (var key in keysInMap1)
                 {

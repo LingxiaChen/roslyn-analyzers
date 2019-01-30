@@ -9,6 +9,8 @@ using Microsoft.CodeAnalysis.FlowAnalysis.DataFlow;
 using Microsoft.CodeAnalysis.FlowAnalysis.DataFlow.CopyAnalysis;
 using Microsoft.CodeAnalysis.FlowAnalysis.DataFlow.PointsToAnalysis;
 
+#pragma warning disable CA1067 // Override Object.Equals(object) when implementing IEquatable<T>
+
 namespace Analyzer.Utilities.FlowAnalysis.Analysis.TaintedDataAnalysis
 {
     using InterproceduralTaintedDataAnalysisData = InterproceduralAnalysisData<TaintedDataAnalysisData, TaintedDataAnalysisContext, TaintedDataAbstractValue>;
@@ -20,7 +22,7 @@ namespace Analyzer.Utilities.FlowAnalysis.Analysis.TaintedDataAnalysis
             WellKnownTypeProvider wellKnownTypeProvider,
             ControlFlowGraph controlFlowGraph,
             ISymbol owningSymbol,
-            InterproceduralAnalysisKind interproceduralAnalysisKind,
+            InterproceduralAnalysisConfiguration interproceduralAnalysisConfig,
             bool pessimisticAnalysis,
             DataFlowAnalysisResult<PointsToBlockAnalysisResult, PointsToAbstractValue> pointsToAnalysisResult,
             Func<TaintedDataAnalysisContext, TaintedDataAnalysisResult> getOrComputeAnalysisResult,
@@ -34,7 +36,7 @@ namespace Analyzer.Utilities.FlowAnalysis.Analysis.TaintedDataAnalysis
                   wellKnownTypeProvider, 
                   controlFlowGraph, 
                   owningSymbol, 
-                  interproceduralAnalysisKind,
+                  interproceduralAnalysisConfig,
                   pessimisticAnalysis,
                   predicateAnalysis: false, 
                   copyAnalysisResultOpt: null, 
@@ -55,7 +57,7 @@ namespace Analyzer.Utilities.FlowAnalysis.Analysis.TaintedDataAnalysis
             WellKnownTypeProvider wellKnownTypeProvider,
             ControlFlowGraph controlFlowGraph,
             ISymbol owningSymbol,
-            InterproceduralAnalysisKind interproceduralAnalysisKind,
+            InterproceduralAnalysisConfiguration interproceduralAnalysisConfig,
             bool pessimisticAnalysis,
             DataFlowAnalysisResult<PointsToBlockAnalysisResult, PointsToAbstractValue> pointsToAnalysisResult,
             Func<TaintedDataAnalysisContext, TaintedDataAnalysisResult> getOrComputeAnalysisResult,
@@ -70,7 +72,7 @@ namespace Analyzer.Utilities.FlowAnalysis.Analysis.TaintedDataAnalysis
                 wellKnownTypeProvider,
                 controlFlowGraph,
                 owningSymbol,
-                interproceduralAnalysisKind,
+                interproceduralAnalysisConfig,
                 pessimisticAnalysis,
                 pointsToAnalysisResult,
                 getOrComputeAnalysisResult,
@@ -96,7 +98,7 @@ namespace Analyzer.Utilities.FlowAnalysis.Analysis.TaintedDataAnalysis
                 this.WellKnownTypeProvider,
                 invokedCfg,
                 invokedMethod,
-                this.InterproceduralAnalysisKind,
+                this.InterproceduralAnalysisConfiguration,
                 this.PessimisticAnalysis,
                 pointsToAnalysisResultOpt,
                 this.GetOrComputeAnalysisResult,
@@ -122,7 +124,7 @@ namespace Analyzer.Utilities.FlowAnalysis.Analysis.TaintedDataAnalysis
         /// </summary>
         public TaintedDataSymbolMap<SinkInfo> SinkInfos { get; }
 
-        protected override void ComputeHashCodePartsSpecific(ImmutableArray<int>.Builder builder)
+        protected override void ComputeHashCodePartsSpecific(ArrayBuilder<int> builder)
         {
             builder.Add(SourceInfos.GetHashCode());
             builder.Add(SanitizerInfos.GetHashCode());

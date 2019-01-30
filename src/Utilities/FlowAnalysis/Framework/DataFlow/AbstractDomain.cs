@@ -1,7 +1,6 @@
 ﻿// Copyright (c) Microsoft.  All Rights Reserved.  Licensed under the Apache License, Version 2.0.  See License.txt in the project root for license information.
 
-using System.Collections.Generic;
-using System.Linq;
+using System.Diagnostics;
 
 namespace Microsoft.CodeAnalysis.FlowAnalysis.DataFlow
 {
@@ -24,25 +23,6 @@ namespace Microsoft.CodeAnalysis.FlowAnalysis.DataFlow
         public abstract T Merge(T value1, T value2);
 
         /// <summary>
-        /// Returns a value that is greater than all <paramref name="values"/>
-        /// </summary>
-        /// <param name="values"> The values to be merged</param>
-        /// <returns>A value that is greater than all <paramref name="values"/></returns>
-        public virtual T Merge(IEnumerable<T> values)
-        {
-            var valuesArray = values.Where(v => v != null).ToArray();
-            switch (valuesArray.Length)
-            {
-                case 0:
-                    return Bottom;
-                case 1:
-                    return valuesArray[0];
-                default:
-                    return valuesArray.Aggregate(Merge);
-            }
-        }
-
-        /// <summary>
         /// Compares <paramref name="oldValue"/> with <paramref name="newValue"/>
         /// and returns a value indicating whether one value is less than,
         /// equal to, or greater than the other.
@@ -55,6 +35,28 @@ namespace Microsoft.CodeAnalysis.FlowAnalysis.DataFlow
         /// <para>Zero: <paramref name="oldValue"/> equals <paramref name="newValue"/>.</para>
         /// <para>Greater than zero: <paramref name="oldValue"/> is greater than <paramref name="newValue"/>.</para>
         ///</returns>
-        public abstract int Compare(T oldValue, T newValue);
+        public int Compare(T oldValue, T newValue)
+            => Compare(oldValue, newValue, assertMonotonicity: true);
+
+        /// <summary>
+        /// Indicates if <paramref name="value1"/> and <paramref name="value2"/> are equal.
+        /// </summary>
+        /// <param name="value1">A value to compare</param>
+        /// <param name="value2">A value to compare</param>
+        public bool Equals(T value1, T value2)
+            => Compare(value1, value2, assertMonotonicity: false) == 0;
+
+        public abstract int Compare(T oldValue, T newValue, bool assertMonotonicity);
+
+#pragma warning disable CA1030 // Use events where appropriate
+        [Conditional("DEBUG")]
+        protected static void FireNonMonotonicAssertIfNeeded(bool assertMonotonicity)
+        {
+            if (assertMonotonicity)
+            {
+                Debug.Fail("Non-monotonic merge");
+            }
+        }
+#pragma warning restore CA1030 // Use events where appropriate
     }
 }

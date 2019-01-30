@@ -10,8 +10,7 @@ namespace Microsoft.NetCore.Analyzers.Security.UnitTests
 {
     public class DoNotUseInsecureDeserializerLosFormatterTests : DiagnosticAnalyzerTestBase
     {
-        private static readonly DiagnosticDescriptor InvocationRule = DoNotUseInsecureDeserializerLosFormatter.RealInvocationDescriptor;
-        private static readonly DiagnosticDescriptor ReferenceRule = DoNotUseInsecureDeserializerLosFormatter.RealReferenceDescriptor;
+        private static readonly DiagnosticDescriptor Rule = DoNotUseInsecureDeserializerLosFormatter.RealMethodUsedDescriptor;
 
         protected override DiagnosticAnalyzer GetBasicDiagnosticAnalyzer()
         {
@@ -92,7 +91,7 @@ namespace Blah
         }
     }
 }",
-            GetCSharpResultAt(12, 20, InvocationRule, "object LosFormatter.Deserialize(Stream stream)"));
+            GetCSharpResultAt(12, 20, Rule, "object LosFormatter.Deserialize(Stream stream)"));
         }
 
         [Fact]
@@ -113,7 +112,7 @@ namespace Blah
         }
     }
 }",
-            GetCSharpResultAt(12, 20, InvocationRule, "object LosFormatter.Deserialize(string input)"));
+            GetCSharpResultAt(12, 20, Rule, "object LosFormatter.Deserialize(string input)"));
         }
 
         [Fact]
@@ -135,7 +134,7 @@ namespace Blah
         }
     }
 }",
-                GetCSharpResultAt(13, 20, ReferenceRule, "object LosFormatter.Deserialize(string input)"));
+                GetCSharpResultAt(13, 20, Rule, "object LosFormatter.Deserialize(string input)"));
         }
 
         [Fact]

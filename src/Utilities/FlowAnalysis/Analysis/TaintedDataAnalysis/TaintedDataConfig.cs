@@ -1,7 +1,6 @@
 ﻿// Copyright (c) Microsoft.  All Rights Reserved.  Licensed under the Apache License, Version 2.0.  See License.txt in the project root for license information.
 
 using System;
-using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Collections.Immutable;
 using System.Diagnostics;
@@ -32,6 +31,8 @@ namespace Analyzer.Utilities.FlowAnalysis.Analysis.TaintedDataAnalysis
         /// </summary>
         private WellKnownTypeProvider WellKnownTypeProvider { get; }
 
+#pragma warning disable CA1721 // Property names should not match get methods
+
         /// <summary>
         /// Mapping of sink kind to source symbol map.
         /// </summary>
@@ -46,6 +47,8 @@ namespace Analyzer.Utilities.FlowAnalysis.Analysis.TaintedDataAnalysis
         /// Mapping of sink kind to sink symbol map.
         /// </summary>
         private Dictionary<SinkKind, Lazy<TaintedDataSymbolMap<SinkInfo>>> SinkSymbolMap { get; }
+
+#pragma warning restore CA1721 // Property names should not match get methods
 
         /// <summary>
         /// Gets a cached <see cref="TaintedDataConfig"/> for <paramref name="compilation"/>.
@@ -75,60 +78,69 @@ namespace Analyzer.Utilities.FlowAnalysis.Analysis.TaintedDataAnalysis
 
             // For tainted data rules with the same set of sources, we'll reuse the same TaintedDataSymbolMap<SourceInfo> instance.
             // Same for sanitizers.
-            Dictionary<ImmutableHashSet<SourceInfo>, Lazy<TaintedDataSymbolMap<SourceInfo>>> sourcesToSymbolMap =
-                new Dictionary<ImmutableHashSet<SourceInfo>, Lazy<TaintedDataSymbolMap<SourceInfo>>>();
-            Dictionary<ImmutableHashSet<SanitizerInfo>, Lazy<TaintedDataSymbolMap<SanitizerInfo>>> sanitizersToSymbolMap =
-                new Dictionary<ImmutableHashSet<SanitizerInfo>, Lazy<TaintedDataSymbolMap<SanitizerInfo>>>();
+            PooledDictionary<ImmutableHashSet<SourceInfo>, Lazy<TaintedDataSymbolMap<SourceInfo>>> sourcesToSymbolMap =
+                PooledDictionary<ImmutableHashSet<SourceInfo>, Lazy<TaintedDataSymbolMap<SourceInfo>>>.GetInstance();
+            PooledDictionary<ImmutableHashSet<SanitizerInfo>, Lazy<TaintedDataSymbolMap<SanitizerInfo>>> sanitizersToSymbolMap =
+                PooledDictionary<ImmutableHashSet<SanitizerInfo>, Lazy<TaintedDataSymbolMap<SanitizerInfo>>>.GetInstance();
 
-            // Build a mapping of (sourceSet, sanitizerSet) -> sinkSet, we'll reuse same TaintedDataSymbolMap<SinkInfo> instance.
-            Dictionary<(ImmutableHashSet<SourceInfo> SourceInfos, ImmutableHashSet<SanitizerInfo> SanitizerInfos), ImmutableHashSet<SinkInfo>.Builder> sourceSanitizersToSinks =
-                new Dictionary<(ImmutableHashSet<SourceInfo> SourceInfos, ImmutableHashSet<SanitizerInfo> SanitizerInfos), ImmutableHashSet<SinkInfo>.Builder>();
-
-            // Using LazyThreadSafetyMode.ExecutionAndPublication to avoid instantiating multiple times.
-            foreach (SinkKind sinkKind in Enum.GetValues(typeof(SinkKind)))
+            // Build a mapping of (sourceSet, sanitizerSet) -> (sinkKinds, sinkSet), so we'll reuse the same TaintedDataSymbolMap<SinkInfo> instance.
+            PooledDictionary<(ImmutableHashSet<SourceInfo> SourceInfos, ImmutableHashSet<SanitizerInfo> SanitizerInfos), (ImmutableHashSet<SinkKind>.Builder SinkKinds, ImmutableHashSet<SinkInfo>.Builder SinkInfos)> sourceSanitizersToSinks =
+                PooledDictionary<(ImmutableHashSet<SourceInfo> SourceInfos, ImmutableHashSet<SanitizerInfo> SanitizerInfos), (ImmutableHashSet<SinkKind>.Builder SinkKinds, ImmutableHashSet<SinkInfo>.Builder SinkInfos)>.GetInstance();
+            try
             {
-                ImmutableHashSet<SourceInfo> sources = GetSourceInfos(sinkKind);
-                if (!sourcesToSymbolMap.TryGetValue(sources, out Lazy<TaintedDataSymbolMap<SourceInfo>> lazySourceSymbolMap))
+                // Using LazyThreadSafetyMode.ExecutionAndPublication to avoid instantiating multiple times.
+                foreach (SinkKind sinkKind in Enum.GetValues(typeof(SinkKind)))
                 {
-                    lazySourceSymbolMap = new Lazy<TaintedDataSymbolMap<SourceInfo>>(
-                        () => { return new TaintedDataSymbolMap<SourceInfo>(this.WellKnownTypeProvider, sources); },
+                    ImmutableHashSet<SourceInfo> sources = GetSourceInfos(sinkKind);
+                    if (!sourcesToSymbolMap.TryGetValue(sources, out Lazy<TaintedDataSymbolMap<SourceInfo>> lazySourceSymbolMap))
+                    {
+                        lazySourceSymbolMap = new Lazy<TaintedDataSymbolMap<SourceInfo>>(
+                            () => { return new TaintedDataSymbolMap<SourceInfo>(this.WellKnownTypeProvider, sources); },
+                            LazyThreadSafetyMode.ExecutionAndPublication);
+                        sourcesToSymbolMap.Add(sources, lazySourceSymbolMap);
+                    }
+
+                    this.SourceSymbolMap.Add(sinkKind, lazySourceSymbolMap);
+
+                    ImmutableHashSet<SanitizerInfo> sanitizers = GetSanitizerInfos(sinkKind);
+                    if (!sanitizersToSymbolMap.TryGetValue(sanitizers, out Lazy<TaintedDataSymbolMap<SanitizerInfo>> lazySanitizerSymbolMap))
+                    {
+                        lazySanitizerSymbolMap = new Lazy<TaintedDataSymbolMap<SanitizerInfo>>(
+                            () => { return new TaintedDataSymbolMap<SanitizerInfo>(this.WellKnownTypeProvider, sanitizers); },
+                            LazyThreadSafetyMode.ExecutionAndPublication);
+                        sanitizersToSymbolMap.Add(sanitizers, lazySanitizerSymbolMap);
+                    }
+
+                    this.SanitizerSymbolMap.Add(sinkKind, lazySanitizerSymbolMap);
+
+                    ImmutableHashSet<SinkInfo> sinks = GetSinkInfos(sinkKind);
+                    if (!sourceSanitizersToSinks.TryGetValue((sources, sanitizers), out (ImmutableHashSet<SinkKind>.Builder SinkKinds, ImmutableHashSet<SinkInfo>.Builder SinkInfos) sinksPair))
+                    {
+                        sinksPair = (ImmutableHashSet.CreateBuilder<SinkKind>(), ImmutableHashSet.CreateBuilder<SinkInfo>());
+                        sourceSanitizersToSinks.Add((sources, sanitizers), sinksPair);
+                    }
+
+                    sinksPair.SinkKinds.Add(sinkKind);
+                    sinksPair.SinkInfos.UnionWith(sinks);
+                }
+
+                foreach (KeyValuePair<(ImmutableHashSet<SourceInfo> SourceInfos, ImmutableHashSet<SanitizerInfo> SanitizerInfos), (ImmutableHashSet<SinkKind>.Builder SinkKinds, ImmutableHashSet<SinkInfo>.Builder SinkInfos)> kvp in sourceSanitizersToSinks)
+                {
+                    ImmutableHashSet<SinkInfo> sinks = kvp.Value.SinkInfos.ToImmutable();
+                    Lazy<TaintedDataSymbolMap<SinkInfo>> lazySinkSymbolMap = new Lazy<TaintedDataSymbolMap<SinkInfo>>(
+                        () => { return new TaintedDataSymbolMap<SinkInfo>(this.WellKnownTypeProvider, sinks); },
                         LazyThreadSafetyMode.ExecutionAndPublication);
-                    sourcesToSymbolMap.Add(sources, lazySourceSymbolMap);
+                    foreach (SinkKind sinkKind in kvp.Value.SinkKinds)
+                    {
+                        this.SinkSymbolMap.Add(sinkKind, lazySinkSymbolMap);
+                    }
                 }
-
-                this.SourceSymbolMap.Add(sinkKind, lazySourceSymbolMap);
-
-                ImmutableHashSet<SanitizerInfo> sanitizers = GetSanitizerInfos(sinkKind);
-                if (!sanitizersToSymbolMap.TryGetValue(sanitizers, out Lazy<TaintedDataSymbolMap<SanitizerInfo>> lazySanitizerSymbolMap))
-                {
-                    lazySanitizerSymbolMap = new Lazy<TaintedDataSymbolMap<SanitizerInfo>>(
-                        () => { return new TaintedDataSymbolMap<SanitizerInfo>(this.WellKnownTypeProvider, sanitizers); },
-                        LazyThreadSafetyMode.ExecutionAndPublication);
-                    sanitizersToSymbolMap.Add(sanitizers, lazySanitizerSymbolMap);
-                }
-
-                this.SanitizerSymbolMap.Add(sinkKind, lazySanitizerSymbolMap);
-
-                ImmutableHashSet<SinkInfo> sinks = GetSinkInfos(sinkKind);
-                if (!sourceSanitizersToSinks.TryGetValue((sources, sanitizers), out ImmutableHashSet<SinkInfo>.Builder sinksBuilder))
-                {
-                    sinksBuilder = ImmutableHashSet.CreateBuilder<SinkInfo>();
-                    sourceSanitizersToSinks.Add((sources, sanitizers), sinksBuilder);
-                }
-
-                sinksBuilder.UnionWith(sinks);
             }
-
-            foreach (KeyValuePair<(ImmutableHashSet<SourceInfo> SourceInfos, ImmutableHashSet<SanitizerInfo> SanitizerInfos), ImmutableHashSet<SinkInfo>.Builder> kvp in sourceSanitizersToSinks)
+            finally
             {
-                ImmutableHashSet<SinkInfo> sinks = kvp.Value.ToImmutable();
-                Lazy<TaintedDataSymbolMap<SinkInfo>> lazySinkSymbolMap = new Lazy<TaintedDataSymbolMap<SinkInfo>>(
-                    () => { return new TaintedDataSymbolMap<SinkInfo>(this.WellKnownTypeProvider, sinks); },
-                    LazyThreadSafetyMode.ExecutionAndPublication);
-                foreach (SinkKind sinkKind in sinks.Select(s => s.SinkKind).Distinct())
-                {
-                    this.SinkSymbolMap.Add(sinkKind, lazySinkSymbolMap);
-                }
+                sourcesToSymbolMap.Free();
+                sanitizersToSymbolMap.Free();
+                sourceSanitizersToSinks.Free();
             }
         }
 
@@ -167,8 +179,17 @@ namespace Analyzer.Utilities.FlowAnalysis.Analysis.TaintedDataAnalysis
             {
                 case SinkKind.Sql:
                 case SinkKind.Dll:
+                case SinkKind.FilePathInjection:
+                case SinkKind.ProcessCommand:
+                case SinkKind.Regex:
                     return WebInputSources.SourceInfos;
-                    
+
+                case SinkKind.InformationDisclosure:
+                    return InformationDisclosureSources.SourceInfos;
+
+                case SinkKind.XSS:  // TODO: Implement as part of CA3002
+                    return ImmutableHashSet<SourceInfo>.Empty;
+
                 default:
                     Debug.Fail($"Unhandled SinkKind {sinkKind}");
                     return ImmutableHashSet<SourceInfo>.Empty;
@@ -183,6 +204,11 @@ namespace Analyzer.Utilities.FlowAnalysis.Analysis.TaintedDataAnalysis
                     return PrimitiveTypeConverterSanitizers.SanitizerInfos;
 
                 case SinkKind.Dll:
+                case SinkKind.InformationDisclosure:
+                case SinkKind.XSS:  // TODO: Implement as part of CA3002
+                case SinkKind.FilePathInjection:
+                case SinkKind.ProcessCommand:
+                case SinkKind.Regex:
                     return ImmutableHashSet<SanitizerInfo>.Empty;
 
                 default:
@@ -200,6 +226,19 @@ namespace Analyzer.Utilities.FlowAnalysis.Analysis.TaintedDataAnalysis
 
                 case SinkKind.Dll:
                     return DllSinks.SinkInfos;
+
+                case SinkKind.InformationDisclosure:
+                case SinkKind.XSS:
+                    return WebOutputSinks.SinkInfos;
+
+                case SinkKind.FilePathInjection:
+                    return FilePathInjectionSinks.SinkInfos;
+
+                case SinkKind.ProcessCommand:
+                    return ProcessCommandSinks.SinkInfos;
+
+                case SinkKind.Regex:
+                    return RegexSinks.SinkInfos;
 
                 default:
                     Debug.Fail($"Unhandled SinkKind {sinkKind}");

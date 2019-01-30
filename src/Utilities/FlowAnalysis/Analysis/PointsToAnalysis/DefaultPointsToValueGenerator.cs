@@ -1,8 +1,6 @@
 ﻿// Copyright (c) Microsoft.  All Rights Reserved.  Licensed under the Apache License, Version 2.0.  See License.txt in the project root for license information.
 
-using System.Collections.Generic;
 using System.Collections.Immutable;
-using System.Diagnostics;
 using Analyzer.Utilities.Extensions;
 
 namespace Microsoft.CodeAnalysis.FlowAnalysis.DataFlow.PointsToAnalysis
@@ -12,18 +10,17 @@ namespace Microsoft.CodeAnalysis.FlowAnalysis.DataFlow.PointsToAnalysis
     /// </summary>
     internal sealed class DefaultPointsToValueGenerator
     {
+        private readonly TrackedEntitiesBuilder _trackedEntitiesBuilder;
         private readonly ImmutableDictionary<AnalysisEntity, PointsToAbstractValue>.Builder _defaultPointsToValueMapBuilder;
-        private ImmutableDictionary<AnalysisEntity, PointsToAbstractValue> _lazyDefaultPointsToValueMap;
 
-        public DefaultPointsToValueGenerator()
+        public DefaultPointsToValueGenerator(TrackedEntitiesBuilder trackedEntitiesBuilder)
         {
+            _trackedEntitiesBuilder = trackedEntitiesBuilder;
             _defaultPointsToValueMapBuilder = ImmutableDictionary.CreateBuilder<AnalysisEntity, PointsToAbstractValue>();
         }
 
         public PointsToAbstractValue GetOrCreateDefaultValue(AnalysisEntity analysisEntity)
         {
-            Debug.Assert(_lazyDefaultPointsToValueMap == null);
-
             if (!_defaultPointsToValueMapBuilder.TryGetValue(analysisEntity, out PointsToAbstractValue value))
             {
                 if (analysisEntity.SymbolOpt?.Kind == SymbolKind.Local ||
@@ -36,21 +33,19 @@ namespace Microsoft.CodeAnalysis.FlowAnalysis.DataFlow.PointsToAnalysis
                 {
                     return PointsToAbstractValue.NoLocation;
                 }
+                else if (analysisEntity.HasUnknownInstanceLocation)
+                {
+                    return PointsToAbstractValue.Unknown;
+                }
 
                 value = PointsToAbstractValue.Create(AbstractLocation.CreateAnalysisEntityDefaultLocation(analysisEntity), mayBeNull: true);
+                _trackedEntitiesBuilder.AllEntities.Add(analysisEntity);
                 _defaultPointsToValueMapBuilder.Add(analysisEntity, value);
             }
 
             return value;
         }
 
-        public void AddTrackedEntities(ImmutableArray<AnalysisEntity>.Builder builder) => builder.AddRange(_defaultPointsToValueMapBuilder.Keys);
         public bool IsTrackedEntity(AnalysisEntity analysisEntity) => _defaultPointsToValueMapBuilder.ContainsKey(analysisEntity);
-
-        public ImmutableDictionary<AnalysisEntity, PointsToAbstractValue> GetDefaultPointsToValueMap()
-        {
-            _lazyDefaultPointsToValueMap = _lazyDefaultPointsToValueMap ?? _defaultPointsToValueMapBuilder.ToImmutableDictionary();
-            return _lazyDefaultPointsToValueMap;
-        }
     }
 }

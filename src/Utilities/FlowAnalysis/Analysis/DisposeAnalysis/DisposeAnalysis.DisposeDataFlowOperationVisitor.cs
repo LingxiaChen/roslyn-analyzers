@@ -12,7 +12,7 @@ using Microsoft.CodeAnalysis.Operations;
 
 namespace Microsoft.CodeAnalysis.FlowAnalysis.DataFlow.DisposeAnalysis
 {
-    using DisposeAnalysisData = IDictionary<AbstractLocation, DisposeAbstractValue>;
+    using DisposeAnalysisData = DictionaryAnalysisData<AbstractLocation, DisposeAbstractValue>;
 
     internal partial class DisposeAnalysis : ForwardDataFlowAnalysis<DisposeAnalysisData, DisposeAnalysisContext, DisposeAnalysisResult, DisposeBlockAnalysisResult, DisposeAbstractValue>
     {
@@ -202,10 +202,10 @@ namespace Microsoft.CodeAnalysis.FlowAnalysis.DataFlow.DisposeAnalysis
                 => DisposeAnalysisDomainInstance.Merge(value1, value2);
             protected override DisposeAnalysisData GetClonedAnalysisData(DisposeAnalysisData analysisData)
                 => GetClonedAnalysisDataHelper(CurrentAnalysisData);
-            protected override DisposeAnalysisData GetEmptyAnalysisData()
+            public override DisposeAnalysisData GetEmptyAnalysisData()
                 => GetEmptyAnalysisDataHelper();
-            protected override DisposeAnalysisData GetAnalysisDataAtBlockEnd(DisposeAnalysisResult analysisResult, BasicBlock block)
-                => GetClonedAnalysisDataHelper(analysisResult[block].OutputData);
+            protected override DisposeAnalysisData GetExitBlockOutputData(DisposeAnalysisResult analysisResult)
+                => GetClonedAnalysisDataHelper(analysisResult.ExitBlockOutput.Data);
             protected override bool Equals(DisposeAnalysisData value1, DisposeAnalysisData value2)
                 => EqualsHelper(value1, value2);
 
@@ -233,11 +233,12 @@ namespace Microsoft.CodeAnalysis.FlowAnalysis.DataFlow.DisposeAnalysis
                 var value = base.VisitInvocation_NonLambdaOrDelegateOrLocalFunction(targetMethod, instance,
                     arguments, invokedAsDelegate, originaOperation, defaultValue);
 
-                var disposeMethodKind = targetMethod.GetDisposeMethodKind(WellKnownTypeProvider.IDisposable);
+                var disposeMethodKind = targetMethod.GetDisposeMethodKind(WellKnownTypeProvider.IDisposable, WellKnownTypeProvider.Task);
                 switch (disposeMethodKind)
                 {
                     case DisposeMethodKind.Dispose:
                     case DisposeMethodKind.DisposeBool:
+                    case DisposeMethodKind.DisposeAsync:
                         HandleDisposingOperation(originaOperation, instance);
                         break;
 

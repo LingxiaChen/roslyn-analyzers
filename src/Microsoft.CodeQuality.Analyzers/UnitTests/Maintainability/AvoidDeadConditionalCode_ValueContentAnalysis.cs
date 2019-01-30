@@ -893,6 +893,24 @@ class Test
         }
 
         [Trait(Traits.DataflowAnalysis, Traits.Dataflow.ValueContentAnalysis)]
+        [Fact]
+        public void IntegralValueCompare_ForLoop_02()
+        {
+            VerifyCSharp(@"
+class Test
+{
+    void M(int param, string param2, string param3)
+    {
+        for (int i = 0; i < param; i++)
+        {
+            var x = i == 0 ? param2 : param3;
+        }
+    }
+}
+");
+        }
+
+        [Trait(Traits.DataflowAnalysis, Traits.Dataflow.ValueContentAnalysis)]
         [Trait(Traits.DataflowAnalysis, Traits.Dataflow.CopyAnalysis)]
         [Fact]
         public void StringCompare_CopyAnalysis()
@@ -1458,6 +1476,102 @@ class Test
             GetCSharpResultAt(10, 48, "s1 == s3", "true"),
             // Test0.cs(11,56): warning CA1508: 's4 == s6' is always 'true'. Remove or refactor the condition(s) to avoid dead code.
             GetCSharpResultAt(11, 56, "s4 == s6", "true"));
+        }
+
+        [Trait(Traits.DataflowAnalysis, Traits.Dataflow.NullAnalysis)]
+        [Trait(Traits.DataflowAnalysis, Traits.Dataflow.CopyAnalysis)]
+        [Fact]
+        public void ValueCompare_IsConstantPattern_Diagnostic()
+        {
+            VerifyCSharp(@"
+class C
+{
+}
+
+class D: C
+{
+}
+
+class Test
+{
+    void M1_IsConstantPattern_AlwaysTrue(int c1)
+    {
+        c1 = 5;
+        if (c1 is 5)
+        {
+            return;
+        }
+    }
+
+    void M1_IsConstantPattern_AlwaysFalse(int c2)
+    {
+        c2 = 10;
+        if (c2 is 5)
+        {
+            return;
+        }
+    }
+
+    void M1_IsConstantPattern_Conversion_AlwaysTrue(short c3)
+    {
+        c3 = (short)5;
+        if (c3 is 5)
+        {
+            return;
+        }
+    }
+}
+",
+            // Test0.cs(15,13): warning CA1508: 'c1 is 5' is always 'true'. Remove or refactor the condition(s) to avoid dead code.
+            GetCSharpResultAt(15, 13, "c1 is 5", "true"),
+            // Test0.cs(24,13): warning CA1508: 'c2 is 5' is always 'false'. Remove or refactor the condition(s) to avoid dead code.
+            GetCSharpResultAt(24, 13, "c2 is 5", "false"),
+            // Test0.cs(33,13): warning CA1508: 'c3 is 5' is always 'true'. Remove or refactor the condition(s) to avoid dead code.
+            GetCSharpResultAt(33, 13, "c3 is 5", "true"));
+
+            // VB does not support patterns.
+        }
+
+        [Trait(Traits.DataflowAnalysis, Traits.Dataflow.NullAnalysis)]
+        [Trait(Traits.DataflowAnalysis, Traits.Dataflow.CopyAnalysis)]
+        [Fact]
+        public void ValueCompare_IsConstantPattern_NoDiagnostic()
+        {
+            VerifyCSharp(@"
+class C
+{
+}
+
+class D: C
+{
+}
+
+class Test
+{
+    void M1_IsConstantPattern(int c1)
+    {
+        if (c1 is 5)
+        {
+            return;
+        }
+    }
+
+    void M1_IsConstantPattern_02(int c2, bool flag)
+    {
+        if (flag)
+        {
+            c2 = 5;
+        }
+
+        if (c2 is 5)
+        {
+            return;
+        }
+    }
+}
+");
+
+            // VB does not support patterns.
         }
     }
 }
