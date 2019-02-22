@@ -44,16 +44,16 @@ namespace Microsoft.NetFramework.Analyzers
             MicrosoftSecurityAnalyzersResources.ResourceManager,
             typeof(MicrosoftSecurityAnalyzersResources));
 
-        private static readonly DiagnosticDescriptor NoVerbsRule = new DiagnosticDescriptor(
+        internal static readonly DiagnosticDescriptor NoVerbsRule = new DiagnosticDescriptor(
             RuleId,
-            Title, 
-            NoVerbsMessage, 
+            Title,
+            NoVerbsMessage,
             DiagnosticCategory.Security,
-            DiagnosticHelpers.DefaultDiagnosticSeverity, 
+            DiagnosticHelpers.DefaultDiagnosticSeverity,
             isEnabledByDefault: true,
             helpLinkUri: HelpLinkUri);
 
-        private static readonly DiagnosticDescriptor NoVerbsNoTokenRule = new DiagnosticDescriptor(
+        internal static readonly DiagnosticDescriptor NoVerbsNoTokenRule = new DiagnosticDescriptor(
             RuleId,
             Title,
             NoVerbsNoTokenMessage,
@@ -62,7 +62,7 @@ namespace Microsoft.NetFramework.Analyzers
             isEnabledByDefault: true,
             helpLinkUri: HelpLinkUri);
 
-        private static readonly DiagnosticDescriptor GetAndTokenRule = new DiagnosticDescriptor(
+        internal static readonly DiagnosticDescriptor GetAndTokenRule = new DiagnosticDescriptor(
             RuleId,
             Title,
             GetAndTokenMessage,
@@ -71,7 +71,7 @@ namespace Microsoft.NetFramework.Analyzers
             isEnabledByDefault: true,
             helpLinkUri: HelpLinkUri);
 
-        private static readonly DiagnosticDescriptor GetAndOtherAndTokenRule = new DiagnosticDescriptor(
+        internal static readonly DiagnosticDescriptor GetAndOtherAndTokenRule = new DiagnosticDescriptor(
             RuleId,
             Title,
             GetAndOtherAndTokenMessage,
@@ -80,7 +80,7 @@ namespace Microsoft.NetFramework.Analyzers
             isEnabledByDefault: true,
             helpLinkUri: HelpLinkUri);
 
-        private static readonly DiagnosticDescriptor VerbsAndNoTokenRule = new DiagnosticDescriptor(
+        internal static readonly DiagnosticDescriptor VerbsAndNoTokenRule = new DiagnosticDescriptor(
             RuleId,
             Title,
             VerbsAndNoTokenMessage,
@@ -115,9 +115,8 @@ namespace Microsoft.NetFramework.Analyzers
                         (SymbolAnalysisContext symbolContext) =>
                         {
                             // TODO enhancements: Consider looking at non-ActionResult-derived return types as well.
-                            IMethodSymbol methodSymbol = symbolContext.Symbol as IMethodSymbol;
-                            if (methodSymbol == null
-                                || methodSymbol.MethodKind != MethodKind.Ordinary 
+                            if (!(symbolContext.Symbol is IMethodSymbol methodSymbol)
+                                || methodSymbol.MethodKind != MethodKind.Ordinary
                                 || methodSymbol.IsStatic
                                 || !methodSymbol.IsPublic()
                                 || !methodSymbol.ReturnType.Inherits(actionResultSymbol)  // FxCop implementation only looks at ActionResult-derived return types.
@@ -128,10 +127,7 @@ namespace Microsoft.NetFramework.Analyzers
                             }
 
                             ImmutableArray<AttributeData> methodAttributes = methodSymbol.GetAttributes();
-                            MvcHttpVerbs verbs;
-                            bool isAntiforgeryTokenDefined;
-                            bool isAction;
-                            mvcAttributeSymbols.ComputeAttributeInfo(methodAttributes, out verbs, out isAntiforgeryTokenDefined, out isAction);
+                            mvcAttributeSymbols.ComputeAttributeInfo(methodAttributes, out var verbs, out var isAntiforgeryTokenDefined, out var isAction);
 
                             if (!isAction)
                             {

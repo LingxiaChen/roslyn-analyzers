@@ -40,7 +40,7 @@ namespace Microsoft.NetCore.Analyzers.Security
                 description: s_Description,
                 helpLinkUri: null,
                 customTags: WellKnownDiagnosticTags.Telemetry);
-        
+
         public override ImmutableArray<DiagnosticDescriptor> SupportedDiagnostics => ImmutableArray.Create(Rule);
 
         public sealed override void Initialize(AnalysisContext context)
@@ -49,13 +49,12 @@ namespace Microsoft.NetCore.Analyzers.Security
 
             // Security analyzer - analyze and report diagnostics on generated code.
             context.ConfigureGeneratedCodeAnalysis(GeneratedCodeAnalysisFlags.Analyze | GeneratedCodeAnalysisFlags.ReportDiagnostics);
-            
+
             context.RegisterCompilationStartAction(
                 (CompilationStartAnalysisContext compilationStartAnalysisContext) =>
                 {
                     var compilation = compilationStartAnalysisContext.Compilation;
-                    var systemNetSecurityRemoteCertificateValidationCallbackTypeSymbol = compilation.GetTypeByMetadataName(
-                            WellKnownTypes.SystemNetSecurityRemoteCertificateValidationCallback);
+                    var systemNetSecurityRemoteCertificateValidationCallbackTypeSymbol = WellKnownTypes.SystemNetSecurityRemoteCertificateValidationCallback(compilation);
                     var obj = WellKnownTypes.Object(compilation);
                     var x509Certificate = WellKnownTypes.X509Certificate(compilation);
                     var x509Chain = WellKnownTypes.X509Chain(compilation);
@@ -69,7 +68,7 @@ namespace Microsoft.NetCore.Analyzers.Security
                     {
                         return;
                     }
-                    
+
                     compilationStartAnalysisContext.RegisterOperationAction(
                         (OperationAnalysisContext operationAnalysisContext) =>
                         {
@@ -99,7 +98,7 @@ namespace Microsoft.NetCore.Analyzers.Security
                                     case OperationKind.MethodReference:
                                         var methodReferenceOperation = (IMethodReferenceOperation)delegateCreationOperation.Target;
                                         var methodSymbol = methodReferenceOperation.Method;
-                                        
+
                                         if (!IsCertificateValidationFunction(
                                             methodSymbol,
                                             obj,
@@ -148,7 +147,7 @@ namespace Microsoft.NetCore.Analyzers.Security
             {
                 return false;
             }
-            
+
             if (!parameters[0].Type.Equals(obj)
                 || !parameters[1].Type.Equals(x509Certificate)
                 || !parameters[2].Type.Equals(x509Chain)
@@ -167,7 +166,7 @@ namespace Microsoft.NetCore.Analyzers.Security
         private static bool AlwaysReturnTrue(IEnumerable<IOperation> operations)
         {
             var hasReturnStatement = false;
-            
+
             foreach (var descendant in operations)
             {
                 if (descendant.Kind == OperationKind.Return)

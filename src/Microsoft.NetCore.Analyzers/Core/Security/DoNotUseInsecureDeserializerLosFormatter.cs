@@ -24,9 +24,9 @@ namespace Microsoft.NetCore.Analyzers.Security
                 isEnabledByDefault: false,
                 helpLinkUri: null);
 
-        protected override string DeserializerTypeMetadataName => WellKnownTypes.SystemWebUILosFormatter;
+        protected override string DeserializerTypeMetadataName => WellKnownTypeNames.SystemWebUILosFormatter;
 
-        protected override ImmutableHashSet<string> DeserializationMethodNames => 
+        protected override ImmutableHashSet<string> DeserializationMethodNames =>
             ImmutableHashSet.Create(
                 StringComparer.Ordinal,
                 "Deserialize");
