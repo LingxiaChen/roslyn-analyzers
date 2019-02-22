@@ -84,6 +84,18 @@ namespace Microsoft.NetCore.Analyzers.Security
                                 },
                                 OperationKind.Invocation);
 
+                            operationBlockStartContext.RegisterOperationAction(
+                                operationAnalysisContext =>
+                                {
+                                    var arrayInitializerOperation = (IArrayInitializerOperation)operationAnalysisContext.Operation;
+                                    if (arrayInitializerOperation.ElementValues.All(s => s.ConstantValue.HasValue &&
+                                        sourceInfoSymbolMap.IsSourceLiteralArray(s.Type as INamedTypeSymbol)))
+                                    {
+                                        rootOperationsNeedingAnalysis.Add(operationAnalysisContext.Operation.GetRoot());
+                                    }
+                                },
+                                OperationKind.ArrayInitializer);
+
                             operationBlockStartContext.RegisterOperationBlockEndAction(
                                 operationBlockAnalysisContext =>
                                 {

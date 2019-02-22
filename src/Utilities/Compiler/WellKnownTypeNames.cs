@@ -260,5 +260,11 @@ namespace Analyzer.Utilities
         public const string SystemDirectoryServicesActiveDirectoryADSearcher = "System.DirectoryServices.ActiveDirectory.ADSearcher";
         public const string SystemDirectoryServicesDirectorySearcher = "System.DirectoryServices.DirectorySearcher";
         public const string SystemDirectoryDirectoryEntry = "System.DirectoryServices.DirectoryEntry";
+        public const string SystemSecurityCryptographyX509CertificatesX509Certificate2 = "System.Security.Cryptography.X509Certificates.X509Certificate2";
+        public const string SystemSecuritySecureString = "System.Security.SecureString";
+        public const string SystemIOFile = "System.IO.File";
+        public const string SystemIOPath = "System.IO.Path";
+        public const string SystemTextEncoding = "System.Text.Encoding";
+        public const string SystemSecurityCryptographySymmetricAlgorithm = "System.Security.Cryptography.SymmetricAlgorithm";
     }
 }

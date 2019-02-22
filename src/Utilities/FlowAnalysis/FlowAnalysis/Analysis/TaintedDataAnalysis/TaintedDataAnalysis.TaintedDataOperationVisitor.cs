@@ -277,6 +277,12 @@ namespace Analyzer.Utilities.FlowAnalysis.Analysis.TaintedDataAnalysis
                     sourceOrigins = new HashSet<SymbolAccess>(baseAbstractValue.SourceOrigins);
                 }
 
+                if (operation.ElementValues.All(s => s.ConstantValue.HasValue &&
+                    this.DataFlowAnalysisContext.SourceInfos.IsSourceLiteralArray(s.Type as INamedTypeSymbol)))
+                {
+                    return TaintedDataAbstractValue.CreateTainted(operation.Parent.Type, operation.Parent.Syntax, this.OwningSymbol);
+                }
+
                 IEnumerable<TaintedDataAbstractValue> taintedAbstractValues =
                     operation.ElementValues
                         .Select<IOperation, TaintedDataAbstractValue>(e => this.GetCachedAbstractValue(e))

@@ -17,6 +17,16 @@
         <target state="new">Do not use insecure deserializer BinaryFormatter</target>
         <note />
       </trans-unit>
+      <trans-unit id="DoNotHardcodeEncryptionKey">
+        <source>Do Not Hardcode Encryption Key</source>
+        <target state="new">Do Not Hardcode Encryption Key</target>
+        <note />
+      </trans-unit>
+      <trans-unit id="DoNotHardcodeEncryptionKeyMessage">
+        <source>Potential vulnerability was found where '{0}' in method '{1}' may be tainted by user-controlled data from '{2}' in method '{3}'.</source>
+        <target state="new">Potential vulnerability was found where '{0}' in method '{1}' may be tainted by user-controlled data from '{2}' in method '{3}'.</target>
+        <note />
+      </trans-unit>
       <trans-unit id="LosFormatterMethodUsedMessage">
         <source>The method '{0}' is insecure when deserializing untrusted data.</source>
         <target state="new">The method '{0}' is insecure when deserializing untrusted data.</target>

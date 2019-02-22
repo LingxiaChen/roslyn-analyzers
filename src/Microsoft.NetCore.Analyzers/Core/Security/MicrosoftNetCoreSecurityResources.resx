@@ -219,4 +219,10 @@
   <data name="ReviewCodeForLdapInjectionVulnerabilitiesTitle" xml:space="preserve">
     <value>Review code for LDAP injection vulnerabilities</value>
   </data>
+  <data name="DoNotHardcodeEncryptionKey" xml:space="preserve">
+    <value>Do Not Hardcode Encryption Key</value>
+  </data>
+  <data name="DoNotHardcodeEncryptionKeyMessage" xml:space="preserve">
+    <value>Potential vulnerability was found where '{0}' in method '{1}' may be tainted by user-controlled data from '{2}' in method '{3}'.</value>
+  </data>
 </root>

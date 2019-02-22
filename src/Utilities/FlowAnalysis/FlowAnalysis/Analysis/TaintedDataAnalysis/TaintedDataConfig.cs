@@ -189,6 +189,9 @@ namespace Analyzer.Utilities.FlowAnalysis.Analysis.TaintedDataAnalysis
                 case SinkKind.InformationDisclosure:
                     return InformationDisclosureSources.SourceInfos;
 
+                case SinkKind.Key:
+                    return KeyInputSources.SourceInfos;
+
                 default:
                     Debug.Fail($"Unhandled SinkKind {sinkKind}");
                     return ImmutableHashSet<SourceInfo>.Empty;
@@ -213,6 +216,7 @@ namespace Analyzer.Utilities.FlowAnalysis.Analysis.TaintedDataAnalysis
                 case SinkKind.FilePathInjection:
                 case SinkKind.ProcessCommand:
                 case SinkKind.Regex:
+                case SinkKind.Key:
                     return ImmutableHashSet<SanitizerInfo>.Empty;
 
                 default:
@@ -246,6 +250,9 @@ namespace Analyzer.Utilities.FlowAnalysis.Analysis.TaintedDataAnalysis
 
                 case SinkKind.Ldap:
                     return LdapSinks.SinkInfos;
+
+                case SinkKind.Key:
+                    return KeySinks.SinkInfos;
 
                 default:
                     Debug.Fail($"Unhandled SinkKind {sinkKind}");
