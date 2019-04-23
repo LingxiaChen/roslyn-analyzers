@@ -296,5 +296,7 @@ namespace Analyzer.Utilities
         public const string SystemSecurityCryptographyPasswordDeriveBytes = "System.Security.Cryptography.PasswordDeriveBytes";
         public const string SystemSecurityCryptographyRfc2898DeriveBytes = "System.Security.Cryptography.Rfc2898DeriveBytes";
         public const string SystemXmlXslXslTransform = "System.Xml.Xsl.XslTransform";
+        public const string SystemSecurityCryptographyX509CertificatesX509Store = "System.Security.Cryptography.X509Certificates.X509Store";
+        public const string SystemSecurityCryptographyX509CertificatesStoreName = "System.Security.Cryptography.X509Certificates.StoreName";
     }
 }
